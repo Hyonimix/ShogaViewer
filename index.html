@@ -1,0 +1,1597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Shoga Viewer</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#121212">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+<style>
+:root {
+    --bg-color: #121212;
+    --panel-bg: rgba(30, 30, 30, 0.85);
+    --text-primary: #e0e0e0;
+    --text-secondary: #888888;
+    --accent: #3a82f6;
+    --shadow-light: rgba(255, 255, 255, 0.05);
+    --shadow-dark: rgba(0, 0, 0, 0.6);
+    --border-radius: 12px;
+    --transition-speed: 0.3s;
+}
+
+* {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+#top-bar {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: auto;
+    min-width: fit-content;
+    height: 54px;
+    background-color: var(--panel-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    z-index: 1000;
+    padding: 0 20px;
+    border-radius: 27px;
+    box-shadow: 0 8px 32px var(--shadow-dark), inset 0 1px 1px var(--shadow-light);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: transform var(--transition-speed) cubic-bezier(0.25, 1, 0.5, 1), opacity var(--transition-speed);
+}
+
+.panel {
+    position: absolute;
+    top: 85px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--panel-bg);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border-radius: var(--border-radius);
+    padding: 20px;
+    z-index: 1500;
+    box-shadow: 0 15px 35px var(--shadow-dark);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    min-width: 300px;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.2s, visibility 0.2s, transform 0.2s;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.panel.hidden {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(-50%) translateY(-10px);
+    pointer-events: none;
+}
+
+.panel-title {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 5px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    padding-bottom: 5px;
+}
+
+button {
+    background: rgba(45, 45, 45, 0.5);
+    color: var(--text-primary);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 10px 18px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    transition: all 0.2s;
+    outline: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+button:active, button.active {
+    background: var(--accent);
+    color: #ffffff;
+    border-color: var(--accent);
+}
+
+.button-group {
+    display: flex;
+    gap: 10px;
+}
+
+.button-group button {
+    flex: 1;
+}
+
+#btn-open-main, #btn-bookmarks, #btn-settings, #btn-grid, #btn-info {
+    padding: 10px;
+}
+
+#btn-open-main svg, #btn-bookmarks svg, #btn-settings svg, #btn-grid svg, #btn-info svg {
+    pointer-events: none;
+    display: block;
+}
+
+#cover-setting-group {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    margin-top: 0;
+    transition: all 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+#cover-setting-group.visible {
+    max-height: 80px;
+    opacity: 1;
+    margin-top: 10px;
+    overflow: visible;
+}
+
+.dropdown-wrapper {
+    position: relative;
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 15px);
+    left: 50%;
+    transform: translateX(-50%) translateY(-10px);
+    background-color: var(--panel-bg);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border-radius: var(--border-radius);
+    padding: 10px;
+    z-index: 1600;
+    box-shadow: 0 10px 30px var(--shadow-dark);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 180px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s, visibility 0.2s, transform 0.2s;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dropdown-menu.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+.dropdown-menu button {
+    width: 100%;
+    justify-content: flex-start;
+    padding: 12px 20px;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+}
+
+.dropdown-menu button:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.info-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 10px;
+    word-break: break-all;
+}
+
+.info-label {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+}
+
+.info-value {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.info-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 15px 0;
+}
+
+#bookmarks-panel {
+    position: fixed;
+    top: 0;
+    right: -350px;
+    width: 320px;
+    height: 100%;
+    background-color: var(--panel-bg);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    z-index: 2000;
+    box-shadow: -10px 0 30px var(--shadow-dark);
+    transition: right 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#bookmarks-panel.active {
+    right: 0;
+}
+
+#bookmarks-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+#bookmarks-list::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
+}
+
+.bookmark-item {
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    padding: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+    border: 1px solid rgba(255,255,255,0.02);
+}
+
+.bookmark-item:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.bookmark-thumb {
+    width: 100%;
+    height: 140px;
+    object-fit: contain;
+    background: #000;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+}
+
+.bookmark-title {
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+}
+
+.bookmark-meta {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+#main-container {
+    width: 100%;
+    height: 100%;
+    position: relative;
+}
+
+#idle-screen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    z-index: 10;
+    pointer-events: none;
+    padding: 20px;
+}
+
+#idle-screen h1 {
+    font-size: clamp(3rem, 12vw, 8rem);
+    margin: 0;
+    letter-spacing: 0.15em;
+    font-weight: 800;
+    color: var(--bg-color);
+    text-shadow: 1px 1px 1px rgba(255,255,255,0.05), -1px -1px 1px rgba(0,0,0,0.8);
+    line-height: 1.1;
+}
+
+#idle-screen p {
+    font-size: clamp(0.75rem, 3vw, 1.2rem);
+    margin-top: 15px;
+    letter-spacing: 0.3em;
+    color: var(--text-secondary);
+}
+
+#btn-restore-session {
+    display: none;
+    pointer-events: auto;
+    margin-top: 40px;
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(58, 130, 246, 0.1);
+    font-size: 0.9rem;
+    padding: 12px 24px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+}
+
+#btn-restore-session:hover {
+    background: var(--accent);
+    color: #fff;
+}
+
+#grid-area {
+    position: absolute;
+    inset: 0;
+    padding: 100px 20px 20px 20px;
+    display: none;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 15px;
+    overflow-y: auto;
+    background-color: var(--bg-color);
+    z-index: 50;
+    align-content: start;
+    touch-action: pan-y;
+}
+
+.grid-item {
+    width: 100%;
+    padding-bottom: 100%;
+    border-radius: var(--border-radius);
+    background-color: #1e1e1e;
+    box-shadow: 0 4px 12px var(--shadow-dark);
+    overflow: hidden;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.2s;
+}
+
+.grid-item:active {
+    transform: scale(0.95);
+}
+
+.grid-item canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.grid-item canvas.loaded {
+    opacity: 1;
+}
+
+.grid-item .index-badge {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+    background: rgba(0,0,0,0.7);
+    color: #fff;
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    border-radius: 10px;
+    pointer-events: none;
+}
+
+#viewer-area {
+    position: absolute;
+    inset: 0;
+    display: none;
+    background-color: var(--bg-color);
+    overflow: hidden;
+    z-index: 60;
+}
+
+#viewer-slider {
+    display: flex;
+    height: 100%;
+    width: 300%;
+    position: absolute;
+    left: -100%;
+    will-change: transform;
+}
+
+.view-slot {
+    width: 33.333%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    flex-shrink: 0;
+    pointer-events: none;
+}
+
+#viewer-content {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    justify-content: center;
+    align-items: center;
+    transform-origin: center center;
+    will-change: transform;
+    pointer-events: auto;
+}
+
+#viewer-content img, .view-slot img {
+    user-select: none;
+    -webkit-user-drag: none;
+    will-change: transform;
+    flex-shrink: 0;
+}
+
+.fit-contain img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.fit-width img { width: 100%; height: auto; }
+.fit-height img { height: 100%; width: auto; }
+.fit-original img { width: auto; height: auto; max-width: none; max-height: none; }
+
+.view-spread.fit-contain img { max-width: 50%; }
+.view-spread.fit-width img { width: 50%; }
+
+body.ui-hidden #top-bar { transform: translateX(-50%) translateY(-100px); opacity: 0; }
+body.panning * { cursor: default !important; }
+body.animating #viewer-slider, 
+body.animating #viewer-content { transition: transform 0.35s cubic-bezier(0.15, 0, 0.15, 1); }
+</style>
+</head>
+<body class="ui-hidden">
+
+<div id="top-bar">
+    <div class="dropdown-wrapper">
+        <button id="btn-open-main" title="Open">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                <line x1="12" y1="11" x2="12" y2="17"></line>
+                <line x1="9" y1="14" x2="15" y2="14"></line>
+            </svg>
+        </button>
+        <div id="open-dropdown" class="dropdown-menu">
+            <button id="btn-open-files">SELECT FILE(S)</button>
+            <button id="btn-open-dir">SELECT DIRECTORY</button>
+        </div>
+    </div>
+    <input type="file" id="fallback-input-files" multiple accept="image/*" style="display:none;">
+    <input type="file" id="fallback-input-dir" webkitdirectory directory multiple accept="image/*" style="display:none;">
+    
+    <button id="btn-grid" style="display:none;" title="Grid View">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+        </svg>
+    </button>
+    <button id="btn-info" style="display:none;" title="Information">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+    </button>
+    <button id="btn-bookmarks" title="Bookmarks">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+        </svg>
+    </button>
+    <button id="btn-settings" title="Settings">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+    </button>
+</div>
+
+<div id="settings-panel" class="panel hidden">
+    <div class="panel-title">Layout Architecture</div>
+    <div class="button-group">
+        <button id="mode-single" class="active">SINGLE</button>
+        <button id="mode-spread">SPREAD</button>
+    </div>
+    
+    <div id="cover-setting-group">
+        <div class="panel-title">Cover Presentation</div>
+        <div class="button-group">
+            <button id="cover-inline" class="active">INLINE</button>
+            <button id="cover-isolated">ISOLATED</button>
+        </div>
+    </div>
+    
+    <div class="panel-title" style="margin-top: 10px;">Reading Direction</div>
+    <div class="button-group">
+        <button id="dir-ltr" class="active">L TO R</button>
+        <button id="dir-rtl">R TO L</button>
+    </div>
+
+    <div class="panel-title" style="margin-top: 10px;">Viewport Fit</div>
+    <div class="button-group">
+        <button id="fit-contain" class="active">CONTAIN</button>
+        <button id="fit-width">WIDTH</button>
+        <button id="fit-height">HEIGHT</button>
+        <button id="fit-original">ORIGINAL</button>
+    </div>
+</div>
+
+<div id="info-panel" class="panel hidden">
+    <div id="info-content"></div>
+</div>
+
+<div id="bookmarks-panel">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 10px;">
+        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary); letter-spacing: 1px;">BOOKMARKS</div>
+        <div style="display:flex; gap:8px;">
+            <button id="btn-clear-bookmarks" style="padding: 6px 12px; font-size: 0.7rem; border-radius: 12px; min-width: auto; border-color: #ef4444; color: #ef4444;">CLEAR ALL</button>
+            <button id="btn-add-bookmark" style="padding: 6px 12px; font-size: 0.7rem; border-radius: 12px; min-width: auto;">+ ADD</button>
+        </div>
+    </div>
+    <div id="bookmarks-list" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:12px; padding-right: 5px;"></div>
+</div>
+
+<div id="main-container">
+    <div id="idle-screen">
+        <h1>SHOGA</h1>
+        <p>VISUAL INTELLIGENCE ENGINE</p>
+        <button id="btn-restore-session">RESTORE SESSION</button>
+    </div>
+    <div id="grid-area"></div>
+    <div id="viewer-area">
+        <div id="viewer-slider">
+            <div id="slot-prev" class="view-slot"></div>
+            <div id="slot-curr" class="view-slot"><div id="viewer-content"></div></div>
+            <div id="slot-next" class="view-slot"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+let files = [];
+let currentIndex = 0;
+let layoutMode = 'SINGLE';
+let readDir = 'LTR';
+let fitMode = 'CONTAIN';
+let firstPageCover = false;
+let viewMode = 'IDLE'; 
+
+let currentTitle = 'Shoga Viewer';
+let bookmarks = [];
+let isGridRendered = false;
+
+let pendingBookmarkRestoreId = null;
+
+let prevIndex = -1, nextIndex = -1;
+
+let currentZoom = 1;
+let panX = 0, panY = 0;
+let isPanning = false;
+let isDragging = false; 
+let axisLocked = null;
+
+let startX = 0, startY = 0;
+let initialPanX = 0, initialPanY = 0;
+let pointers = [];
+let initialDistance = 0, initialZoom = 1;
+
+let lastTap = 0;
+let singleTapTimeout = null;
+
+let navTimeout = null;
+let pendingIndex = null;
+
+const urlCache = new Map();
+
+const DB_NAME = 'ShogaViewerDB';
+const STORE_HANDLES = 'FileSystemHandles';
+const STORE_BOOKMARKS = 'Bookmarks';
+
+function initDB() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, 3);
+        req.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains(STORE_HANDLES)) {
+                db.createObjectStore(STORE_HANDLES);
+            }
+            if (!db.objectStoreNames.contains(STORE_BOOKMARKS)) {
+                db.createObjectStore(STORE_BOOKMARKS, { keyPath: 'id' });
+            }
+        };
+        req.onsuccess = (e) => resolve(e.target.result);
+        req.onerror = (e) => reject(e.target.error);
+    });
+}
+
+async function saveBookmarkToDB(bookmark) {
+    try {
+        const db = await initDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_BOOKMARKS, 'readwrite');
+            tx.objectStore(STORE_BOOKMARKS).put(bookmark);
+            tx.oncomplete = () => { db.close(); resolve(); };
+            tx.onerror = (e) => { db.close(); reject(e.target.error); };
+        });
+    } catch(e) { throw e; }
+}
+
+async function loadBookmarksFromDB() {
+    try {
+        const db = await initDB();
+        return new Promise((resolve) => {
+            const tx = db.transaction(STORE_BOOKMARKS, 'readonly');
+            const req = tx.objectStore(STORE_BOOKMARKS).getAll();
+            req.onsuccess = () => { db.close(); resolve(req.result || []); };
+            req.onerror = () => { db.close(); resolve([]); };
+        });
+    } catch (e) {
+        return [];
+    }
+}
+
+async function deleteBookmarkFromDB(id) {
+    try {
+        const db = await initDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_BOOKMARKS, 'readwrite');
+            tx.objectStore(STORE_BOOKMARKS).delete(id);
+            tx.oncomplete = () => { db.close(); resolve(); };
+            tx.onerror = (e) => { db.close(); reject(e.target.error); };
+        });
+    } catch(e) { throw e; }
+}
+
+async function saveDirHandle(handle) {
+    try {
+        const db = await initDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_HANDLES, 'readwrite');
+            tx.objectStore(STORE_HANDLES).put(handle, 'lastDir');
+            tx.oncomplete = () => { db.close(); resolve(); };
+            tx.onerror = (e) => { db.close(); reject(e.target.error); };
+        });
+    } catch (err) {}
+}
+
+async function loadDirHandle() {
+    try {
+        const db = await initDB();
+        return new Promise((resolve) => {
+            const tx = db.transaction(STORE_HANDLES, 'readonly');
+            const req = tx.objectStore(STORE_HANDLES).get('lastDir');
+            req.onsuccess = () => { db.close(); resolve(req.result); };
+            req.onerror = () => { db.close(); resolve(null); };
+        });
+    } catch (err) { return null; }
+}
+
+async function verifyPermission(fileHandle) {
+    const options = { mode: 'read' };
+    if ((await fileHandle.queryPermission(options)) === 'granted') return true;
+    if ((await fileHandle.requestPermission(options)) === 'granted') return true;
+    return false;
+}
+
+const dom = {
+    body: document.body,
+    topBar: document.getElementById('top-bar'),
+    btnOpenMain: document.getElementById('btn-open-main'),
+    openDropdown: document.getElementById('open-dropdown'),
+    btnOpenFiles: document.getElementById('btn-open-files'),
+    btnOpenDir: document.getElementById('btn-open-dir'),
+    fallbackInputFiles: document.getElementById('fallback-input-files'),
+    fallbackInputDir: document.getElementById('fallback-input-dir'),
+    btnGrid: document.getElementById('btn-grid'),
+    btnInfo: document.getElementById('btn-info'),
+    btnBookmarks: document.getElementById('btn-bookmarks'),
+    btnSettings: document.getElementById('btn-settings'),
+    settingsPanel: document.getElementById('settings-panel'),
+    coverSettingGroup: document.getElementById('cover-setting-group'),
+    infoPanel: document.getElementById('info-panel'),
+    infoContent: document.getElementById('info-content'),
+    bookmarksPanel: document.getElementById('bookmarks-panel'),
+    btnAddBookmark: document.getElementById('btn-add-bookmark'),
+    btnClearBookmarks: document.getElementById('btn-clear-bookmarks'),
+    bookmarksList: document.getElementById('bookmarks-list'),
+    idleScreen: document.getElementById('idle-screen'),
+    btnRestoreSession: document.getElementById('btn-restore-session'),
+    gridArea: document.getElementById('grid-area'),
+    viewerArea: document.getElementById('viewer-area'),
+    viewerSlider: document.getElementById('viewer-slider'),
+    viewerContent: document.getElementById('viewer-content'),
+    slots: {
+        prev: document.getElementById('slot-prev'),
+        curr: document.getElementById('slot-curr'),
+        next: document.getElementById('slot-next')
+    }
+};
+
+function switchToIdle() {
+    viewMode = 'IDLE';
+    dom.gridArea.style.display = 'none';
+    dom.viewerArea.style.display = 'none';
+    dom.btnGrid.style.display = 'none';
+    dom.btnInfo.style.display = 'none';
+    dom.idleScreen.style.display = 'flex';
+    dom.body.classList.remove('ui-hidden');
+}
+
+(async () => {
+    bookmarks = await loadBookmarksFromDB();
+    renderBookmarks();
+    if (window.showDirectoryPicker) {
+        const handle = await loadDirHandle();
+        if (handle) {
+            dom.idleScreen.querySelector('h1').textContent = 'SHOGA';
+            dom.idleScreen.querySelector('p').textContent = 'VISUAL INTELLIGENCE ENGINE';
+            dom.btnRestoreSession.textContent = `RESTORE: ${handle.name}`;
+            dom.btnRestoreSession.style.display = 'block';
+            
+            dom.btnRestoreSession.onclick = async () => {
+                const originalText = dom.btnRestoreSession.textContent;
+                dom.btnRestoreSession.textContent = 'LOADING...';
+                if (await verifyPermission(handle)) {
+                    const fileList = [];
+                    for await (const entry of handle.values()) {
+                        if (entry.kind === 'file') {
+                            const file = await entry.getFile();
+                            if (file.type.startsWith('image/')) fileList.push(file);
+                        }
+                    }
+                    processFileList(fileList, handle.name);
+                } else {
+                    dom.btnRestoreSession.textContent = originalText;
+                }
+            };
+        }
+    }
+})();
+
+function closeAllPanels() {
+    dom.settingsPanel.classList.add('hidden');
+    dom.infoPanel.classList.add('hidden');
+    dom.openDropdown.classList.remove('active');
+    dom.bookmarksPanel.classList.remove('active');
+}
+
+const lazyThumbnailObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting) {
+            const canvas = entry.target;
+            const file = canvas.fileData;
+            if (file) {
+                generateHighPerfThumbnail(file, canvas);
+                lazyThumbnailObserver.unobserve(canvas);
+            }
+        }
+    });
+}, { root: dom.gridArea, rootMargin: '200px' });
+
+async function generateHighPerfThumbnail(file, canvas) {
+    try {
+        const bmp = await createImageBitmap(file, { resizeWidth: 300, resizeQuality: 'low' });
+        canvas.width = bmp.width;
+        canvas.height = bmp.height;
+        const ctx = canvas.getContext('2d', { alpha: false });
+        ctx.drawImage(bmp, 0, 0);
+        bmp.close();
+        canvas.classList.add('loaded');
+    } catch (e) {
+        const img = new Image();
+        img.src = URL.createObjectURL(file);
+        img.onload = () => {
+            canvas.width = 300;
+            canvas.height = 300 * (img.height / img.width);
+            const ctx = canvas.getContext('2d', { alpha: false });
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            URL.revokeObjectURL(img.src);
+            canvas.classList.add('loaded');
+        };
+    }
+}
+
+async function captureThumbnail() {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const group = getSpreadGroup(currentIndex);
+    
+    try {
+        if (group.length === 1) {
+            const bmp = await createImageBitmap(files[group[0]], { resizeWidth: 400 });
+            canvas.width = bmp.width;
+            canvas.height = bmp.height;
+            ctx.drawImage(bmp, 0, 0);
+            bmp.close();
+        } else if (group.length === 2) {
+            let idxLeft = readDir === 'LTR' ? group[0] : group[1];
+            let idxRight = readDir === 'LTR' ? group[1] : group[0];
+            
+            const bmpL = await createImageBitmap(files[idxLeft], { resizeWidth: 200 });
+            const bmpR = await createImageBitmap(files[idxRight], { resizeWidth: 200 });
+            
+            canvas.width = bmpL.width + bmpR.width;
+            canvas.height = Math.max(bmpL.height, bmpR.height);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.drawImage(bmpL, 0, (canvas.height - bmpL.height) / 2);
+            ctx.drawImage(bmpR, bmpL.width, (canvas.height - bmpR.height) / 2);
+            bmpL.close();
+            bmpR.close();
+        }
+        return canvas.toDataURL('image/jpeg', 0.8);
+    } catch (e) {
+        canvas.width = 400; canvas.height = 300;
+        ctx.fillStyle = '#1e1e1e';
+        ctx.fillRect(0, 0, 400, 300);
+        return canvas.toDataURL('image/jpeg', 0.8);
+    }
+}
+
+function renderBookmarks() {
+    dom.bookmarksList.innerHTML = '';
+    bookmarks.sort((a, b) => b.lastAccessed - a.lastAccessed).forEach(bk => {
+        const el = document.createElement('div');
+        el.className = 'bookmark-item';
+        el.innerHTML = `
+            <div style="position:relative;">
+                <img class="bookmark-thumb" src="${bk.thumbnail}">
+                <button class="btn-delete-bookmark" style="position:absolute; top:5px; right:5px; padding:4px; background:rgba(0,0,0,0.6); border:none; border-radius:50%; min-width:auto;">
+                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="#ef4444" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="bookmark-title">${bk.title}</div>
+            <div class="bookmark-meta">Page ${bk.state.currentIndex + 1} / ${bk.state.fileNames.length} • ${bk.state.layoutMode}</div>
+        `;
+        el.addEventListener('click', async (e) => {
+            if (e.target.closest('.btn-delete-bookmark')) {
+                e.stopPropagation();
+                bookmarks = bookmarks.filter(b => b.id !== bk.id);
+                try {
+                    await deleteBookmarkFromDB(bk.id);
+                } catch(err) { console.error(err); }
+                renderBookmarks();
+            } else {
+                await restoreBookmark(bk.id);
+            }
+        });
+        dom.bookmarksList.appendChild(el);
+    });
+}
+
+async function restoreBookmark(id) {
+    const bk = bookmarks.find(b => b.id === id);
+    if (!bk) return;
+    
+    bk.lastAccessed = Date.now();
+    try {
+        await saveBookmarkToDB(bk);
+    } catch(err) { console.error(err); }
+    renderBookmarks();
+    
+    const restoredFiles = [];
+    const nameMap = new Map();
+    files.forEach(f => nameMap.set(f.name, f));
+    
+    bk.state.fileNames.forEach(name => {
+        if (nameMap.has(name)) restoredFiles.push(nameMap.get(name));
+    });
+    
+    if (restoredFiles.length === 0) {
+        let autoRestored = false;
+        if (window.showDirectoryPicker) {
+            const handle = await loadDirHandle();
+            if (handle && handle.name === bk.title) {
+                if (await verifyPermission(handle)) {
+                    const fileList = [];
+                    for await (const entry of handle.values()) {
+                        if (entry.kind === 'file') {
+                            const file = await entry.getFile();
+                            if (file.type.startsWith('image/')) fileList.push(file);
+                        }
+                    }
+                    const newFiles = fileList.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
+                    const newNameMap = new Map();
+                    newFiles.forEach(f => newNameMap.set(f.name, f));
+                    bk.state.fileNames.forEach(name => {
+                        if (newNameMap.has(name)) restoredFiles.push(newNameMap.get(name));
+                    });
+                    if (restoredFiles.length > 0) autoRestored = true;
+                }
+            }
+        }
+
+        if (!autoRestored) {
+            pendingBookmarkRestoreId = id;
+            dom.idleScreen.querySelector('h1').textContent = 'RESTORE BOOKMARK';
+            dom.idleScreen.querySelector('p').textContent = `Please select the folder: [ ${bk.title} ]`;
+            dom.btnRestoreSession.textContent = 'SELECT FOLDER';
+            dom.btnRestoreSession.style.display = 'block';
+            
+            dom.btnRestoreSession.onclick = () => {
+                if (window.showDirectoryPicker) handleDirectoryPicker();
+                else dom.fallbackInputDir.click();
+            };
+            closeAllPanels();
+            switchToIdle();
+            return;
+        }
+    }
+    
+    pendingBookmarkRestoreId = null;
+    files = restoredFiles;
+    currentTitle = bk.state.title;
+    document.title = currentTitle;
+    
+    const targetName = bk.state.currentFileName;
+    const foundIndex = files.findIndex(f => f.name === targetName);
+    currentIndex = foundIndex !== -1 ? foundIndex : bk.state.currentIndex;
+    if (currentIndex >= files.length) currentIndex = Math.max(0, files.length - 1);
+    
+    layoutMode = bk.state.layoutMode;
+    readDir = bk.state.readDir;
+    fitMode = bk.state.fitMode;
+    firstPageCover = bk.state.firstPageCover;
+    
+    isGridRendered = false; 
+
+    document.querySelectorAll('#mode-single, #mode-spread').forEach(b => b.classList.remove('active'));
+    document.getElementById(layoutMode === 'SINGLE' ? 'mode-single' : 'mode-spread').classList.add('active');
+    
+    if (layoutMode === 'SPREAD') dom.coverSettingGroup.classList.add('visible');
+    else dom.coverSettingGroup.classList.remove('visible');
+    
+    document.querySelectorAll('#cover-inline, #cover-isolated').forEach(b => b.classList.remove('active'));
+    document.getElementById(firstPageCover ? 'cover-isolated' : 'cover-inline').classList.add('active');
+
+    document.querySelectorAll('#dir-ltr, #dir-rtl').forEach(b => b.classList.remove('active'));
+    document.getElementById(readDir === 'LTR' ? 'dir-ltr' : 'dir-rtl').classList.add('active');
+
+    document.querySelectorAll('#fit-contain, #fit-width, #fit-height, #fit-original').forEach(b => b.classList.remove('active'));
+    document.getElementById('fit-' + fitMode.toLowerCase()).classList.add('active');
+
+    closeAllPanels();
+    if (files.length > 0) dom.idleScreen.style.display = 'none';
+    switchToViewer();
+}
+
+dom.btnAddBookmark.addEventListener('click', async () => {
+    if (files.length === 0 || viewMode !== 'VIEWER') return;
+    dom.btnAddBookmark.style.opacity = '0.5';
+    dom.btnAddBookmark.textContent = '...';
+    
+    const tb = await captureThumbnail();
+    const bk = {
+        id: Date.now(),
+        title: currentTitle,
+        thumbnail: tb,
+        state: {
+            fileNames: files.map(f => f.name),
+            currentIndex: currentIndex,
+            currentFileName: files[currentIndex] ? files[currentIndex].name : null,
+            layoutMode: layoutMode,
+            readDir: readDir,
+            fitMode: fitMode,
+            firstPageCover: firstPageCover,
+            title: currentTitle
+        },
+        lastAccessed: Date.now()
+    };
+
+    try {
+        await saveBookmarkToDB(bk);
+        bookmarks.push(bk);
+        renderBookmarks();
+    } catch(e) {
+        console.error(e);
+    }
+    
+    dom.btnAddBookmark.style.opacity = '1';
+    dom.btnAddBookmark.textContent = '+ ADD';
+});
+
+dom.btnClearBookmarks.addEventListener('click', async () => {
+    for (const bk of bookmarks) {
+        try {
+            await deleteBookmarkFromDB(bk.id);
+        } catch(e) { console.error(e); }
+    }
+    bookmarks = [];
+    renderBookmarks();
+});
+
+function getFileUrl(index) {
+    if (index < 0 || index >= files.length) return null;
+    if (urlCache.has(index)) {
+        const url = urlCache.get(index);
+        urlCache.delete(index);
+        urlCache.set(index, url);
+        return url;
+    }
+    const url = URL.createObjectURL(files[index]);
+    urlCache.set(index, url);
+    if (urlCache.size > 15) {
+        const firstKey = urlCache.keys().next().value;
+        URL.revokeObjectURL(urlCache.get(firstKey));
+        urlCache.delete(firstKey);
+    }
+    return url;
+}
+
+setTimeout(() => { if(viewMode === 'IDLE') dom.body.classList.remove('ui-hidden'); }, 100);
+
+dom.btnOpenMain.addEventListener('click', (e) => { 
+    e.stopPropagation(); 
+    pendingBookmarkRestoreId = null;
+    const isActive = dom.openDropdown.classList.contains('active');
+    closeAllPanels();
+    if (!isActive) dom.openDropdown.classList.add('active'); 
+});
+
+dom.btnOpenFiles.addEventListener('click', () => { 
+    dom.openDropdown.classList.remove('active'); 
+    dom.fallbackInputFiles.click(); 
+});
+
+async function handleDirectoryPicker() {
+    try {
+        const handle = await window.showDirectoryPicker();
+        await saveDirHandle(handle);
+        const fileList = [];
+        for await (const entry of handle.values()) {
+            if (entry.kind === 'file') {
+                const file = await entry.getFile();
+                if (file.type.startsWith('image/')) fileList.push(file);
+            }
+        }
+        processFileList(fileList, handle.name);
+    } catch(e) {}
+}
+
+dom.btnOpenDir.addEventListener('click', () => {
+    dom.openDropdown.classList.remove('active');
+    if (window.showDirectoryPicker) {
+        handleDirectoryPicker();
+    } else {
+        dom.fallbackInputDir.click();
+    }
+});
+
+const handleFileInput = (e) => {
+    if (e.target.files.length > 0) {
+        const filesArr = Array.from(e.target.files);
+        let title = 'Shoga Viewer';
+        if (filesArr[0].webkitRelativePath) {
+            title = filesArr[0].webkitRelativePath.split('/')[0] || title;
+        }
+        processFileList(filesArr.filter(f => f.type.startsWith('image/')), title);
+    }
+    e.target.value = ''; 
+};
+dom.fallbackInputFiles.addEventListener('change', handleFileInput);
+dom.fallbackInputDir.addEventListener('change', handleFileInput);
+
+dom.btnSettings.addEventListener('click', (e) => { 
+    e.stopPropagation(); 
+    const isHidden = dom.settingsPanel.classList.contains('hidden');
+    closeAllPanels();
+    if (isHidden) dom.settingsPanel.classList.remove('hidden'); 
+});
+
+dom.btnInfo.addEventListener('click', (e) => { 
+    e.stopPropagation(); 
+    const isHidden = dom.infoPanel.classList.contains('hidden');
+    closeAllPanels();
+    if (isHidden) {
+        dom.infoPanel.classList.remove('hidden');
+        updateInfoPanel();
+    }
+});
+
+dom.btnBookmarks.addEventListener('click', (e) => { 
+    e.stopPropagation(); 
+    const isActive = dom.bookmarksPanel.classList.contains('active');
+    closeAllPanels();
+    if (!isActive) {
+        dom.bookmarksPanel.classList.add('active');
+        renderBookmarks();
+    }
+});
+
+dom.btnGrid.addEventListener('click', () => switchToGrid());
+
+document.addEventListener('click', (e) => {
+    if (!dom.settingsPanel.contains(e.target) && e.target !== dom.btnSettings) dom.settingsPanel.classList.add('hidden');
+    if (!dom.infoPanel.contains(e.target) && e.target !== dom.btnInfo) dom.infoPanel.classList.add('hidden');
+    if (!dom.openDropdown.contains(e.target) && e.target !== dom.btnOpenMain) dom.openDropdown.classList.remove('active');
+    if (!dom.bookmarksPanel.contains(e.target) && e.target !== dom.btnBookmarks && !dom.btnBookmarks.contains(e.target)) dom.bookmarksPanel.classList.remove('active');
+});
+
+function bindGroup(ids, callback) {
+    ids.forEach(id => {
+        document.getElementById(id).addEventListener('click', (e) => {
+            ids.forEach(i => document.getElementById(i).classList.remove('active'));
+            e.target.classList.add('active');
+            callback(id);
+        });
+    });
+}
+
+bindGroup(['mode-single', 'mode-spread'], id => { 
+    layoutMode = id === 'mode-single' ? 'SINGLE' : 'SPREAD'; 
+    if (layoutMode === 'SPREAD') {
+        dom.coverSettingGroup.classList.add('visible');
+    } else {
+        dom.coverSettingGroup.classList.remove('visible');
+    }
+    renderViewer(); 
+});
+bindGroup(['cover-inline', 'cover-isolated'], id => { firstPageCover = id === 'cover-isolated'; renderViewer(); });
+bindGroup(['dir-ltr', 'dir-rtl'], id => { readDir = id === 'dir-ltr' ? 'LTR' : 'RTL'; renderViewer(); });
+bindGroup(['fit-contain', 'fit-width', 'fit-height', 'fit-original'], id => { fitMode = id.replace('fit-', '').toUpperCase(); renderViewer(); });
+
+function processFileList(fileList, title) {
+    urlCache.forEach(url => URL.revokeObjectURL(url));
+    urlCache.clear();
+
+    files = fileList.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
+    
+    currentIndex = 0;
+    isGridRendered = false; 
+    
+    lazyThumbnailObserver.disconnect();
+    dom.gridArea.replaceChildren();
+    dom.slots.prev.replaceChildren();
+    dom.viewerContent.replaceChildren();
+    if (!dom.viewerContent.parentElement) dom.slots.curr.appendChild(dom.viewerContent);
+    dom.slots.next.replaceChildren();
+    
+    resetTransform(false);
+    
+    if (title) {
+        currentTitle = title;
+        document.title = currentTitle;
+    } else {
+        currentTitle = 'Shoga Viewer';
+        document.title = currentTitle;
+    }
+    
+    if (files.length > 0) { 
+        dom.idleScreen.style.display = 'none'; 
+        dom.idleScreen.querySelector('h1').textContent = 'SHOGA';
+        dom.idleScreen.querySelector('p').textContent = 'VISUAL INTELLIGENCE ENGINE';
+        dom.btnRestoreSession.style.display = 'none';
+        
+        if (pendingBookmarkRestoreId) {
+            const id = pendingBookmarkRestoreId;
+            pendingBookmarkRestoreId = null;
+            restoreBookmark(id);
+        } else {
+            switchToGrid(); 
+        }
+    }
+}
+
+function switchToGrid() {
+    viewMode = 'GRID';
+    dom.body.classList.remove('ui-hidden');
+    dom.gridArea.style.display = 'grid';
+    dom.viewerArea.style.display = 'none';
+    dom.btnGrid.style.display = 'none';
+    dom.btnInfo.style.display = 'none';
+    
+    if (!isGridRendered) {
+        lazyThumbnailObserver.disconnect();
+        dom.gridArea.innerHTML = '';
+        
+        const titleHeader = document.createElement('div');
+        titleHeader.textContent = currentTitle;
+        titleHeader.style.gridColumn = '1 / -1';
+        titleHeader.style.fontSize = '0.85rem';
+        titleHeader.style.color = 'var(--text-secondary)';
+        titleHeader.style.letterSpacing = '1px';
+        titleHeader.style.marginBottom = '10px';
+        titleHeader.style.fontWeight = '600';
+        titleHeader.style.textAlign = 'left';
+        titleHeader.style.paddingLeft = '5px';
+        dom.gridArea.appendChild(titleHeader);
+
+        files.forEach((file, index) => {
+            const item = document.createElement('div');
+            item.className = 'grid-item';
+            item.dataset.index = index;
+            const canvas = document.createElement('canvas');
+            canvas.fileData = file; 
+            const badge = document.createElement('div');
+            badge.className = 'index-badge';
+            badge.textContent = index + 1;
+            item.appendChild(canvas);
+            item.appendChild(badge);
+            dom.gridArea.appendChild(item);
+            lazyThumbnailObserver.observe(canvas);
+        });
+        isGridRendered = true;
+    }
+}
+
+dom.gridArea.addEventListener('click', (e) => {
+    const item = e.target.closest('.grid-item');
+    if (item) {
+        currentIndex = parseInt(item.dataset.index, 10);
+        switchToViewer();
+    }
+});
+
+function switchToViewer() {
+    viewMode = 'VIEWER';
+    dom.gridArea.style.display = 'none';
+    dom.viewerArea.style.display = 'block';
+    dom.btnGrid.style.display = 'flex';
+    dom.btnInfo.style.display = 'flex';
+    dom.body.classList.add('ui-hidden');
+    renderViewer();
+}
+
+function getSpreadGroup(index) {
+    if (index < 0 || index >= files.length) return [];
+    if (layoutMode === 'SINGLE') return [index];
+
+    if (firstPageCover && index === 0) return [0];
+
+    const offset = firstPageCover ? 1 : 0;
+    const adjIndex = index - offset;
+    const groupStart = Math.floor(adjIndex / 2) * 2 + offset;
+    
+    const group = [groupStart];
+    if (groupStart + 1 < files.length) group.push(groupStart + 1);
+    
+    return group;
+}
+
+function updateIndices() {
+    const currentGroup = getSpreadGroup(currentIndex);
+    if (currentGroup.length === 0) { prevIndex = -1; nextIndex = -1; return; }
+
+    prevIndex = currentGroup[0] - 1;
+    nextIndex = currentGroup[currentGroup.length - 1] + 1;
+}
+
+function updateInfoPanel() {
+    if (files.length === 0 || viewMode !== 'VIEWER') return;
+
+    const rawGroup = getSpreadGroup(currentIndex);
+    let indices = [...rawGroup];
+    if (layoutMode === 'SPREAD' && indices.length === 2 && readDir === 'RTL') {
+        indices.reverse();
+    }
+
+    let html = '';
+    indices.forEach((idx, i) => {
+        const f = files[idx];
+        const sizeMB = (f.size / (1024 * 1024)).toFixed(2);
+        
+        if (layoutMode === 'SPREAD' && indices.length === 2) {
+            html += `<div class="panel-title">${i === 0 ? 'LEFT PAGE' : 'RIGHT PAGE'}</div>`;
+        }
+        
+        html += `<div class="info-row"><span class="info-label">FILENAME</span><span class="info-value">${f.name}</span></div>
+                 <div class="info-row"><span class="info-label">SIZE</span><span class="info-value">${sizeMB} MB</span></div>
+                 <div class="info-row"><span class="info-label">INDEX</span><span class="info-value">${idx + 1} / ${files.length}</span></div>`;
+        
+        if (i < indices.length - 1) {
+            html += `<div class="info-divider"></div>`;
+        }
+    });
+
+    dom.infoContent.innerHTML = html;
+}
+
+function populateSlot(slot, targetIndex) {
+    if (targetIndex < 0 || targetIndex >= files.length) {
+        slot.replaceChildren();
+        return;
+    }
+    
+    const rawGroup = getSpreadGroup(targetIndex);
+    let indices = [...rawGroup];
+
+    if (layoutMode === 'SPREAD' && indices.length === 2) {
+        if (readDir === 'RTL') indices.reverse();
+    }
+
+    const imgs = slot.querySelectorAll('img');
+    if (imgs.length !== indices.length) {
+        slot.replaceChildren();
+        indices.forEach(idx => {
+            const img = document.createElement('img');
+            img.src = getFileUrl(idx);
+            slot.appendChild(img);
+        });
+    } else {
+        indices.forEach((idx, i) => {
+            const url = getFileUrl(idx);
+            if (imgs[i].src !== url) imgs[i].src = url;
+        });
+    }
+}
+
+function renderViewer() {
+    if (files.length === 0 || viewMode !== 'VIEWER') return;
+    
+    updateIndices();
+
+    let fitClass = `fit-${fitMode.toLowerCase()}`;
+    let spreadClass = layoutMode === 'SPREAD' ? 'view-spread ' : '';
+    
+    dom.slots.prev.className = `view-slot ${spreadClass}${fitClass}`;
+    dom.slots.curr.className = `view-slot ${spreadClass}${fitClass}`;
+    dom.slots.next.className = `view-slot ${spreadClass}${fitClass}`;
+
+    if (!dom.viewerContent.parentElement) dom.slots.curr.appendChild(dom.viewerContent);
+    
+    if (readDir === 'LTR') {
+        populateSlot(dom.slots.prev, prevIndex);
+        populateSlot(dom.slots.next, nextIndex);
+    } else {
+        populateSlot(dom.slots.prev, nextIndex);
+        populateSlot(dom.slots.next, prevIndex);
+    }
+
+    populateSlot(dom.viewerContent, currentIndex);
+
+    resetTransform(false);
+}
+
+function resetTransform(smooth = true) {
+    currentZoom = 1; panX = 0; panY = 0;
+    if (smooth) {
+        dom.body.classList.add('animating');
+        dom.viewerSlider.style.transform = `translateX(0px)`;
+        applyContentTransform();
+        setTimeout(() => dom.body.classList.remove('animating'), 350);
+    } else {
+        dom.viewerSlider.style.transform = `translateX(0px)`;
+        applyContentTransform();
+    }
+}
+
+function applyContentTransform() {
+    dom.viewerContent.style.transform = `translate(${panX}px, ${panY}px) scale(${currentZoom})`;
+}
+
+function commitNavigation() {
+    if (navTimeout) {
+        clearTimeout(navTimeout);
+        navTimeout = null;
+        if (pendingIndex !== null) {
+            currentIndex = pendingIndex;
+            pendingIndex = null;
+        }
+        dom.body.classList.remove('animating');
+        dom.viewerSlider.style.transform = `translateX(0px)`;
+        renderViewer();
+    }
+}
+
+function navigateLogical(logicalDir) {
+    closeAllPanels();
+    commitNavigation();
+    updateIndices();
+    
+    const targetIdx = logicalDir === 'next' ? nextIndex : prevIndex;
+    if (targetIdx < 0 || targetIdx >= files.length) {
+        dom.body.classList.add('animating');
+        dom.viewerSlider.style.transform = `translateX(0px)`;
+        setTimeout(() => dom.body.classList.remove('animating'), 350);
+        return;
+    }
+
+    pendingIndex = targetIdx;
+    const physicalDir = readDir === 'LTR' ? logicalDir : (logicalDir === 'next' ? 'prev' : 'next');
+    const translationX = physicalDir === 'next' ? -window.innerWidth : window.innerWidth;
+
+    void dom.viewerSlider.offsetWidth; 
+
+    dom.body.classList.add('animating');
+    dom.viewerSlider.style.transform = `translateX(${translationX}px)`;
+
+    navTimeout = setTimeout(() => {
+        commitNavigation();
+        if (!dom.infoPanel.classList.contains('hidden')) updateInfoPanel();
+    }, 350);
+}
+
+dom.viewerArea.addEventListener('wheel', (e) => {
+    if (viewMode !== 'VIEWER') return;
+    closeAllPanels();
+    if (navTimeout) commitNavigation();
+    e.preventDefault();
+    dom.body.classList.add('ui-hidden');
+    
+    const zoomFactor = -e.deltaY * 0.001;
+    const newZoom = Math.max(0.1, Math.min(currentZoom * Math.exp(zoomFactor), 10));
+    
+    const cx = e.clientX - window.innerWidth / 2;
+    const cy = e.clientY - window.innerHeight / 2;
+
+    panX = cx - (cx - panX) * (newZoom / currentZoom);
+    panY = cy - (cy - panY) * (newZoom / currentZoom);
+    
+    currentZoom = newZoom;
+    applyContentTransform();
+}, { passive: false });
+
+dom.viewerArea.addEventListener('pointerdown', (e) => {
+    if (viewMode !== 'VIEWER' || e.target.closest('#top-bar') || e.target.closest('.panel') || e.target.closest('#bookmarks-panel')) return;
+    
+    closeAllPanels();
+    if (navTimeout) commitNavigation();
+
+    const now = Date.now();
+    
+    if (pointers.length === 0) {
+        if (now - lastTap < 250) {
+            clearTimeout(singleTapTimeout);
+            resetTransform(true);
+            lastTap = 0;
+            return;
+        }
+        lastTap = now;
+    }
+
+    isPanning = true; isDragging = false; axisLocked = null;
+    pointers.push(e);
+    
+    try { dom.viewerArea.setPointerCapture(e.pointerId); } catch(err) {}
+
+    if (pointers.length === 1) {
+        startX = e.clientX; startY = e.clientY;
+        initialPanX = panX; initialPanY = panY;
+    }
+});
+
+dom.viewerArea.addEventListener('pointermove', (e) => {
+    if (!isPanning || navTimeout) return;
+    const idx = pointers.findIndex(p => p.pointerId === e.pointerId);
+    if (idx !== -1) pointers[idx] = e;
+
+    if (pointers.length === 1) {
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+
+        if (!isDragging && Math.hypot(dx, dy) > 10) {
+            isDragging = true;
+            dom.body.classList.add('ui-hidden');
+            if (currentZoom === 1) axisLocked = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+        }
+
+        if (isDragging) {
+            if (currentZoom !== 1) {
+                panX = initialPanX + dx; panY = initialPanY + dy;
+                applyContentTransform();
+            } else if (axisLocked === 'x') {
+                dom.viewerSlider.style.transform = `translateX(${dx}px)`;
+            } else {
+                panY = dy * 0.2; 
+                applyContentTransform();
+            }
+        }
+    } else if (pointers.length === 2) {
+        const dist = Math.hypot(pointers[0].clientX - pointers[1].clientX, pointers[0].clientY - pointers[1].clientY);
+        const center = { x: (pointers[0].clientX + pointers[1].clientX) / 2, y: (pointers[0].clientY + pointers[1].clientY) / 2 };
+        
+        if (initialDistance === 0) {
+            initialDistance = dist; initialZoom = currentZoom;
+            startX = center.x; startY = center.y;
+            initialPanX = panX; initialPanY = panY;
+        } else {
+            const scale = dist / initialDistance;
+            const newZoom = Math.max(0.1, Math.min(initialZoom * scale, 10));
+            const cx = center.x - window.innerWidth / 2;
+            const cy = center.y - window.innerHeight / 2;
+            
+            panX = cx - (cx - initialPanX - (center.x - startX)) * (newZoom / initialZoom);
+            panY = cy - (cy - initialPanY - (center.y - startY)) * (newZoom / initialZoom);
+            currentZoom = newZoom;
+            applyContentTransform();
+        }
+    }
+});
+
+function handlePointerEnd(e) {
+    if (!isPanning) return;
+    
+    try {
+        if (dom.viewerArea.hasPointerCapture(e.pointerId)) {
+            dom.viewerArea.releasePointerCapture(e.pointerId);
+        }
+    } catch(err) {}
+
+    const idx = pointers.findIndex(p => p.pointerId === e.pointerId);
+    if (idx !== -1) pointers.splice(idx, 1);
+
+    if (pointers.length === 0) {
+        initialDistance = 0;
+        if (isDragging) {
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY; 
+            if (currentZoom === 1) {
+                if (axisLocked === 'x') {
+                    if (Math.abs(dx) > window.innerWidth * 0.15) {
+                        const physicalDir = dx > 0 ? 'prev' : 'next';
+                        const logicalDir = readDir === 'LTR' ? physicalDir : (physicalDir === 'next' ? 'prev' : 'next');
+                        navigateLogical(logicalDir);
+                    } else resetTransform(true);
+                } else {
+                    if (dy > window.innerHeight * 0.15) {
+                        switchToGrid();
+                    } else {
+                        panY = 0; applyContentTransform();
+                    }
+                }
+            }
+        } else {
+            const clickX = e.clientX, screenW = window.innerWidth;
+            clearTimeout(singleTapTimeout);
+            singleTapTimeout = setTimeout(() => {
+                if (currentZoom === 1) {
+                    if (clickX < screenW * 0.15) navigateLogical(readDir === 'LTR' ? 'prev' : 'next');
+                    else if (clickX > screenW * 0.85) navigateLogical(readDir === 'LTR' ? 'next' : 'prev');
+                    else dom.body.classList.toggle('ui-hidden');
+                } else dom.body.classList.toggle('ui-hidden');
+            }, 200);
+        }
+        isPanning = false; isDragging = false;
+    } else {
+        startX = pointers[0].clientX; startY = pointers[0].clientY;
+        initialPanX = panX; initialPanY = panY;
+        initialDistance = 0; 
+    }
+}
+
+dom.viewerArea.addEventListener('pointerup', handlePointerEnd);
+dom.viewerArea.addEventListener('pointercancel', handlePointerEnd);
+
+window.addEventListener('keydown', (e) => {
+    if (viewMode === 'VIEWER') {
+        if (e.key === 'ArrowRight') navigateLogical(readDir === 'LTR' ? 'next' : 'prev');
+        if (e.key === 'ArrowLeft') navigateLogical(readDir === 'LTR' ? 'prev' : 'next');
+    }
+});
+</script>
+</body>
+</html>
