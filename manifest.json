@@ -1,12 +1,19 @@
 {
+  "manifest_version": 3,
+  "version": "1.3.1",
   "name": "Shoga Viewer",
   "short_name": "Shoga",
-  "description": "Visual Intelligence Engine - A fast, local image viewer.",
+  "description": "A high-performance image viewer optimized for ChromeOS tablets and laptops, providing a fluid, local-first experience.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#121212",
   "theme_color": "#121212",
-  "icons":[
+  "categories": [
+    "photo",
+    "productivity",
+    "utilities"
+  ],
+  "icons": [
     {
       "src": "icon.svg",
       "sizes": "any",
@@ -18,6 +25,36 @@
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "maskable"
+    },
+    {
+      "src": "icon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-48x48.png",
+      "sizes": "48x48",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-96x96.png",
+      "sizes": "96x96",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-128x128.png",
+      "sizes": "128x128",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
     }
   ]
 }

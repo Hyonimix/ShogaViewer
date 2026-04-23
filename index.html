@@ -566,6 +566,47 @@ body.ui-hidden #top-bar { transform: translateX(-50%) translateY(-100px); opacit
 body.panning * { cursor: default !important; }
 body.animating #viewer-slider, 
 body.animating #viewer-content { transition: transform 0.35s cubic-bezier(0.15, 0, 0.15, 1); }
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 5000;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s;
+}
+.modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+.modal-content {
+    background: var(--panel-bg);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--border-radius);
+    padding: 25px;
+    width: 90%;
+    max-width: 340px;
+    transform: scale(0.9);
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    box-shadow: 0 20px 50px var(--shadow-dark);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+.modal-overlay.active .modal-content {
+    transform: scale(1);
+}
+#modal-confirm {
+    background: #ef4444;
+    border-color: #ef4444;
+    color: #ffffff;
+}
 </style>
 </head>
 <body class="ui-hidden">
@@ -717,6 +758,17 @@ body.animating #viewer-content { transition: transform 0.35s cubic-bezier(0.15, 
             <div id="slot-prev" class="view-slot"></div>
             <div id="slot-curr" class="view-slot"><div id="viewer-content"></div></div>
             <div id="slot-next" class="view-slot"></div>
+        </div>
+    </div>
+</div>
+
+<div id="confirm-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div id="modal-title" class="panel-title" style="font-size: 0.9rem; color: var(--text-primary); border: none;">CONFIRM</div>
+        <div id="modal-message" style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5; margin: 5px 0 10px 0;">Are you sure you want to proceed?</div>
+        <div class="button-group">
+            <button id="modal-cancel">CANCEL</button>
+            <button id="modal-confirm">DELETE</button>
         </div>
     </div>
 </div>
@@ -1057,6 +1109,31 @@ dom.btnClearRecents.addEventListener('click', async (e) => {
     renderRecents();
 });
 
+function showConfirmModal(title, message) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('confirm-modal');
+        const titleEl = document.getElementById('modal-title');
+        const messageEl = document.getElementById('modal-message');
+        const btnCancel = document.getElementById('modal-cancel');
+        const btnConfirm = document.getElementById('modal-confirm');
+
+        titleEl.textContent = title;
+        messageEl.textContent = message;
+        modal.classList.add('active');
+
+        const cleanup = (result) => {
+            modal.classList.remove('active');
+            btnConfirm.onclick = null;
+            btnCancel.onclick = null;
+            resolve(result);
+        };
+
+        btnConfirm.onclick = () => cleanup(true);
+        btnCancel.onclick = () => cleanup(false);
+        modal.onclick = (e) => { if(e.target === modal) cleanup(false); };
+    });
+}
+
 function renderBookmarks() {
     dom.bookmarksList.innerHTML = '';
     bookmarks.sort((a, b) => b.lastAccessed - a.lastAccessed).forEach(bk => {
@@ -1075,6 +1152,9 @@ function renderBookmarks() {
         el.addEventListener('click', async (e) => {
             if (e.target.closest('.btn-delete-bookmark')) {
                 e.stopPropagation();
+                const confirmed = await showConfirmModal('DELETE BOOKMARK', `Remove "${bk.title}"?`);
+                if (!confirmed) return;
+                
                 bookmarks = bookmarks.filter(b => b.id !== bk.id);
                 try {
                     await deleteBookmarkFromDB(bk.id);
@@ -1226,7 +1306,9 @@ dom.btnAddBookmark.addEventListener('click', async () => {
 });
 
 dom.btnClearBookmarks.addEventListener('click', async () => {
-    if (!confirm('Are you sure you want to delete all bookmarks?')) return;
+    const confirmed = await showConfirmModal('DELETE ALL BOOKMARKS', 'Are you sure you want to permanently clear all items?');
+    if (!confirmed) return;
+    
     for (const bk of bookmarks) {
         try {
             await deleteBookmarkFromDB(bk.id);
