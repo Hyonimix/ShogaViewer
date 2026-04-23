@@ -507,6 +507,49 @@ button:active, button.active {
     background: rgba(255, 255, 255, 0.15);
 }
 
+.header-controls-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.folder-sort-group {
+    display: flex;
+    gap: 2px;
+}
+
+.folder-sort-btn {
+    padding: 6px;
+    min-width: auto;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.folder-sort-btn.active {
+    color: var(--accent);
+    background: rgba(58, 130, 246, 0.1);
+}
+
+.folder-filter-input {
+    width: 150px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 6px 12px;
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    outline: none;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.folder-filter-input:focus {
+    border-color: var(--accent);
+    background: rgba(255, 255, 255, 0.08);
+}
+
 #viewer-area {
     position: absolute;
     inset: 0;
@@ -783,6 +826,9 @@ let readDir = 'LTR';
 let fitMode = 'CONTAIN';
 let firstPageCover = false;
 let viewMode = 'IDLE'; 
+
+let folderSortMode = 'name-asc';
+let folderFilterText = '';
 
 let currentTitle = 'Shoga Viewer';
 let bookmarks = [];
@@ -1180,16 +1226,49 @@ async function restoreBookmark(id) {
     renderBookmarks();
     
     const restoredFiles = [];
-    const nameMap = new Map();
-    files.forEach(f => nameMap.set(f.name, f));
     
-    bk.state.fileNames.forEach(name => {
-        if (nameMap.has(name)) restoredFiles.push(nameMap.get(name));
-    });
+    if (currentTitle === bk.title) {
+        const nameMap = new Map();
+        files.forEach(f => nameMap.set(f.name, f));
+        
+        bk.state.fileNames.forEach(name => {
+            if (nameMap.has(name)) restoredFiles.push(nameMap.get(name));
+        });
+    }
     
     if (restoredFiles.length === 0) {
         let autoRestored = false;
-        if (window.showDirectoryPicker) {
+
+        if (bk.state.dirStack && bk.state.dirStack.length > 0) {
+            const target = bk.state.dirStack[bk.state.dirStack.length - 1];
+            try {
+                if (await verifyPermission(target.handle)) {
+                    const fileList = [];
+                    const folderList = [];
+                    for await (const entry of target.handle.values()) {
+                        if (entry.kind === 'file') {
+                            const file = await entry.getFile();
+                            if (file.type.startsWith('image/')) fileList.push(file);
+                        } else if (entry.kind === 'directory') {
+                            folderList.push(entry);
+                        }
+                    }
+                    const newFiles = fileList.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
+                    const newNameMap = new Map();
+                    newFiles.forEach(f => newNameMap.set(f.name, f));
+                    bk.state.fileNames.forEach(name => {
+                        if (newNameMap.has(name)) restoredFiles.push(newNameMap.get(name));
+                    });
+                    if (restoredFiles.length > 0) {
+                        autoRestored = true;
+                        currentFolders = folderList;
+                        dirStack = bk.state.dirStack;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        if (!autoRestored && window.showDirectoryPicker) {
             const handles = await loadDirHandles();
             const matchedItem = handles.find(h => h.name === bk.title);
             if (matchedItem) {
@@ -1212,7 +1291,7 @@ async function restoreBookmark(id) {
                     });
                     if (restoredFiles.length > 0) {
                         autoRestored = true;
-                        currentFolders = folderList.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
+                        currentFolders = folderList;
                         dirStack = [{ handle: matchedItem.handle, name: matchedItem.name }];
                     }
                 }
@@ -1235,6 +1314,10 @@ async function restoreBookmark(id) {
     }
     
     pendingBookmarkRestoreId = null;
+
+    urlCache.forEach(url => URL.revokeObjectURL(url));
+    urlCache.clear();
+
     files = restoredFiles;
     currentTitle = bk.state.title;
     document.title = currentTitle;
@@ -1289,7 +1372,8 @@ dom.btnAddBookmark.addEventListener('click', async () => {
             readDir: readDir,
             fitMode: fitMode,
             firstPageCover: firstPageCover,
-            title: currentTitle
+            title: currentTitle,
+            dirStack: dirStack.map(item => ({ handle: item.handle, name: item.name }))
         },
         lastAccessed: Date.now()
     };
@@ -1383,7 +1467,6 @@ async function processDirectoryHandle(handle, titleOverride = null) {
             currentFolders.push(entry);
         }
     }
-    currentFolders.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
     processFileList(fileList, titleOverride || handle.name);
 }
 
@@ -1539,78 +1622,186 @@ function switchToGrid() {
     dom.btnGrid.style.display = 'none';
     dom.btnInfo.style.display = 'none';
     
-    if (!isGridRendered) {
-        lazyThumbnailObserver.disconnect();
-        dom.gridArea.innerHTML = '';
-        
-        if (dirStack.length > 0 || currentFolders.length > 0) {
-            const headerContainer = document.createElement('div');
-            headerContainer.style.gridColumn = '1 / -1';
-            headerContainer.style.display = 'flex';
-            headerContainer.style.justifyContent = 'space-between';
-            headerContainer.style.alignItems = 'center';
-            headerContainer.style.marginBottom = '15px';
-            
-            const titleSpan = document.createElement('span');
-            titleSpan.textContent = currentTitle;
-            titleSpan.style.fontSize = '0.85rem';
-            titleSpan.style.color = 'var(--text-secondary)';
-            titleSpan.style.letterSpacing = '1px';
-            titleSpan.style.fontWeight = '600';
-            titleSpan.style.paddingLeft = '5px';
-            headerContainer.appendChild(titleSpan);
-            
-            if (dirStack.length > 1) {
-                const btnUp = document.createElement('button');
-                btnUp.className = 'btn-up';
-                btnUp.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 10 4 15 9 20"></polyline><path d="M20 4v7a4 4 0 0 1-4 4H4"></path></svg>`;
-                btnUp.addEventListener('click', async () => {
-                    dirStack.pop();
-                    const parent = dirStack[dirStack.length - 1];
-                    await processDirectoryHandle(parent.handle, parent.name);
-                });
-                headerContainer.appendChild(btnUp);
-            }
-            dom.gridArea.appendChild(headerContainer);
-        }
-        
-        if (currentFolders.length > 0) {
-            const folderContainer = document.createElement('div');
-            folderContainer.style.gridColumn = '1 / -1';
-            folderContainer.style.display = 'flex';
-            folderContainer.style.flexWrap = 'wrap';
-            folderContainer.style.gap = '10px';
-            folderContainer.style.marginBottom = '20px';
-            
-            currentFolders.forEach(folder => {
-                const folderItem = document.createElement('div');
-                folderItem.className = 'folder-item';
-                folderItem.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> <span>${folder.name}</span>`;
-                folderItem.addEventListener('click', async () => {
-                    dirStack.push({ handle: folder, name: folder.name });
-                    await processDirectoryHandle(folder, folder.name);
-                });
-                folderContainer.appendChild(folderItem);
-            });
-            dom.gridArea.appendChild(folderContainer);
-        }
+    lazyThumbnailObserver.disconnect();
+    dom.gridArea.innerHTML = '';
+    
+    const headerContainer = document.createElement('div');
+    headerContainer.style.gridColumn = '1 / -1';
+    headerContainer.style.display = 'flex';
+    headerContainer.style.justifyContent = 'space-between';
+    headerContainer.style.alignItems = 'center';
+    headerContainer.style.marginBottom = '15px';
+    
+    const titleSpan = document.createElement('span');
+    titleSpan.textContent = currentTitle;
+    titleSpan.style.fontSize = '0.85rem';
+    titleSpan.style.color = 'var(--text-secondary)';
+    titleSpan.style.letterSpacing = '1px';
+    titleSpan.style.fontWeight = '600';
+    titleSpan.style.paddingLeft = '5px';
+    headerContainer.appendChild(titleSpan);
 
-        files.forEach((file, index) => {
-            const item = document.createElement('div');
-            item.className = 'grid-item';
-            item.dataset.index = index;
-            const canvas = document.createElement('canvas');
-            canvas.fileData = file; 
-            const badge = document.createElement('div');
-            badge.className = 'index-badge';
-            badge.textContent = index + 1;
-            item.appendChild(canvas);
-            item.appendChild(badge);
-            dom.gridArea.appendChild(item);
-            lazyThumbnailObserver.observe(canvas);
+    const controlsWrapper = document.createElement('div');
+    controlsWrapper.className = 'header-controls-wrapper';
+
+    if (currentFolders.length > 0) {
+        const sortGroup = document.createElement('div');
+        sortGroup.className = 'folder-sort-group';
+        
+        const createSortBtn = (mode, svgPath) => {
+            const b = document.createElement('button');
+            b.className = `folder-sort-btn ${folderSortMode === mode ? 'active' : ''}`;
+            b.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">${svgPath}</svg>`;
+            b.addEventListener('click', () => {
+                folderSortMode = mode;
+                switchToGrid();
+            });
+            return b;
+        };
+
+        sortGroup.appendChild(createSortBtn('name-asc', '<path d="M6 3v18"></path><path d="M10 7l-4-4-4 4"></path><path d="M20 5h-5"></path><path d="M19 11h-4"></path><path d="M18 17h-4"></path>'));
+        sortGroup.appendChild(createSortBtn('name-desc', '<path d="M6 21V3"></path><path d="M10 17l-4 4-4-4"></path><path d="M20 5h-5"></path><path d="M19 11h-4"></path><path d="M18 17h-4"></path>'));
+        
+        controlsWrapper.appendChild(sortGroup);
+
+        const filterWrapper = document.createElement('div');
+        filterWrapper.style.position = 'relative';
+        filterWrapper.style.display = 'flex';
+        filterWrapper.style.alignItems = 'center';
+
+        const filterInput = document.createElement('input');
+        filterInput.type = 'text';
+        filterInput.className = 'folder-filter-input';
+        filterInput.placeholder = 'Search...';
+        filterInput.value = folderFilterText;
+        filterInput.style.paddingRight = '26px';
+        
+        const clearBtn = document.createElement('button');
+        clearBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+        clearBtn.style.position = 'absolute';
+        clearBtn.style.right = '4px';
+        clearBtn.style.background = 'transparent';
+        clearBtn.style.border = 'none';
+        clearBtn.style.color = 'var(--text-secondary)';
+        clearBtn.style.padding = '4px';
+        clearBtn.style.cursor = 'pointer';
+        clearBtn.style.opacity = folderFilterText ? '1' : '0';
+        clearBtn.style.transition = 'opacity 0.2s, color 0.2s';
+        clearBtn.style.pointerEvents = folderFilterText ? 'auto' : 'none';
+        
+        clearBtn.addEventListener('mouseover', () => clearBtn.style.color = 'var(--text-primary)');
+        clearBtn.addEventListener('mouseout', () => clearBtn.style.color = 'var(--text-secondary)');
+
+        const toggleClearBtn = () => {
+            if (filterInput.value) {
+                clearBtn.style.opacity = '1';
+                clearBtn.style.pointerEvents = 'auto';
+            } else {
+                clearBtn.style.opacity = '0';
+                clearBtn.style.pointerEvents = 'none';
+            }
+        };
+
+        const applyFilter = () => {
+            let filterStyleEl = document.getElementById('folder-filter-style');
+            if (!filterStyleEl) {
+                filterStyleEl = document.createElement('style');
+                filterStyleEl.id = 'folder-filter-style';
+                document.head.appendChild(filterStyleEl);
+            }
+            if (folderFilterText) {
+                const safeQuery = folderFilterText.toLowerCase().replace(/(["\\])/g, '\\$1');
+                filterStyleEl.textContent = `.folder-item:not([data-search*="${safeQuery}"]) { display: none !important; }`;
+            } else {
+                filterStyleEl.textContent = '';
+            }
+        };
+
+        applyFilter(); 
+
+        filterInput.addEventListener('input', (e) => {
+            folderFilterText = e.target.value;
+            toggleClearBtn();
+            applyFilter();
         });
-        isGridRendered = true;
+
+        clearBtn.addEventListener('click', () => {
+            filterInput.value = '';
+            folderFilterText = '';
+            toggleClearBtn();
+            applyFilter();
+            filterInput.focus();
+        });
+
+        filterWrapper.appendChild(filterInput);
+        filterWrapper.appendChild(clearBtn);
+        controlsWrapper.appendChild(filterWrapper);
+        
+        setTimeout(() => { if(folderFilterText) filterInput.focus(); }, 0);
     }
+
+    if (dirStack.length > 1) {
+        const btnUp = document.createElement('button');
+        btnUp.className = 'btn-up';
+        btnUp.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 10 4 15 9 20"></polyline><path d="M20 4v7a4 4 0 0 1-4 4H4"></path></svg>`;
+        btnUp.addEventListener('click', async () => {
+            dirStack.pop();
+            const parent = dirStack[dirStack.length - 1];
+            await processDirectoryHandle(parent.handle, parent.name);
+        });
+        controlsWrapper.appendChild(btnUp);
+    }
+
+    headerContainer.appendChild(controlsWrapper);
+    dom.gridArea.appendChild(headerContainer);
+    
+    if (currentFolders.length > 0) {
+        const folderContainer = document.createElement('div');
+        folderContainer.style.gridColumn = '1 / -1';
+        folderContainer.style.display = 'flex';
+        folderContainer.style.flexWrap = 'wrap';
+        folderContainer.style.gap = '10px';
+        folderContainer.style.marginBottom = '20px';
+        
+        let displayFolders = [...currentFolders];
+        if (folderSortMode === 'name-asc') displayFolders.sort((a,b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
+        else if (folderSortMode === 'name-desc') displayFolders.sort((a,b) => b.name.localeCompare(a.name, undefined, {numeric: true}));
+
+        displayFolders.forEach(folder => {
+            const folderItem = document.createElement('div');
+            folderItem.className = 'folder-item';
+            
+            folderItem.dataset.search = folder.name.toLowerCase(); 
+            
+            folderItem.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> <span>${folder.name}</span>`;
+            folderItem.addEventListener('click', async () => {
+                folderFilterText = ''; 
+                const filterStyleEl = document.getElementById('folder-filter-style');
+                if (filterStyleEl) filterStyleEl.textContent = ''; 
+
+                dirStack.push({ handle: folder, name: folder.name });
+                await processDirectoryHandle(folder, folder.name);
+            });
+            folderContainer.appendChild(folderItem);
+        });
+        dom.gridArea.appendChild(folderContainer);
+    }
+
+    files.forEach((file, index) => {
+        const item = document.createElement('div');
+        item.className = 'grid-item';
+        item.dataset.index = index;
+        const canvas = document.createElement('canvas');
+        canvas.fileData = file; 
+        const badge = document.createElement('div');
+        badge.className = 'index-badge';
+        badge.textContent = index + 1;
+        item.appendChild(canvas);
+        item.appendChild(badge);
+        dom.gridArea.appendChild(item);
+        lazyThumbnailObserver.observe(canvas);
+    });
+    isGridRendered = true;
 }
 
 dom.gridArea.addEventListener('click', (e) => {
@@ -2036,6 +2227,32 @@ window.addEventListener('keydown', (e) => {
     if (viewMode === 'VIEWER') {
         if (e.key === 'ArrowRight') navigateLogical(readDir === 'LTR' ? 'next' : 'prev');
         if (e.key === 'ArrowLeft') navigateLogical(readDir === 'LTR' ? 'prev' : 'next');
+        
+        if (e.key === 'Escape') switchToGrid();
+
+        if (e.key === 'f' || e.key === 'F11') {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+            }
+        }
+
+        if (e.key === '=' || e.key === '+') {
+            const newZoom = Math.min(currentZoom * 1.25, 10);
+            panX = panX * (newZoom / currentZoom);
+            panY = panY * (newZoom / currentZoom);
+            currentZoom = newZoom;
+            applyContentTransform();
+        }
+        if (e.key === '-') {
+            const newZoom = Math.max(currentZoom / 1.25, 0.1);
+            panX = panX * (newZoom / currentZoom);
+            panY = panY * (newZoom / currentZoom);
+            currentZoom = newZoom;
+            applyContentTransform();
+        }
+        if (e.key === '0') resetTransform(true);
     }
 });
 
@@ -2043,38 +2260,50 @@ if ('launchQueue' in window) {
     launchQueue.setConsumer(async (launchParams) => {
         if (!launchParams.files.length) return;
         
-        const handle = launchParams.files[0];
-        if (handle.kind === 'file') {
-            const file = await handle.getFile();
-            processFileList([file], file.name);
-            isSingleFileMode = true;
+        const filePromises = launchParams.files.map(handle => handle.getFile());
+        const openedFiles = await Promise.all(filePromises);
+        const validImages = openedFiles.filter(f => f.type.startsWith('image/'));
+
+        if (validImages.length > 0) {
+            processFileList(validImages, validImages[0].name);
+            isSingleFileMode = validImages.length === 1;
             switchToViewer();
 
-            const handles = await loadDirHandles();
-            for (const item of handles) {
-                try {
-                    const path = await item.handle.resolve(handle);
-                    if (path !== null) {
-                        if (await verifyPermission(item.handle)) {
-                            dirStack = [{ handle: item.handle, name: item.name }];
-                            await processDirectoryHandle(item.handle, item.name);
-                            
-                            const targetName = file.name;
-                            const foundIndex = files.findIndex(f => f.name === targetName);
-                            if (foundIndex !== -1) {
-                                currentIndex = foundIndex;
+            if (isSingleFileMode) {
+                const handle = launchParams.files[0];
+                const handles = await loadDirHandles();
+                for (const item of handles) {
+                    try {
+                        const path = await item.handle.resolve(handle);
+                        if (path !== null) {
+                            if (await verifyPermission(item.handle)) {
+                                dirStack = [{ handle: item.handle, name: item.name }];
+                                await processDirectoryHandle(item.handle, item.name);
+                                
+                                const targetName = validImages[0].name;
+                                const foundIndex = files.findIndex(f => f.name === targetName);
+                                if (foundIndex !== -1) {
+                                    currentIndex = foundIndex;
+                                }
+                                
+                                isSingleFileMode = false;
+                                renderViewer();
+                                break;
                             }
-                            
-                            isSingleFileMode = false;
-                            renderViewer();
-                            break;
                         }
-                    }
-                } catch (e) {
+                    } catch (e) {}
                 }
             }
         }
     });
+}
+
+if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === "open_directory" && request.handle) {
+      processDirectoryHandle(request.handle);
+    }
+  });
 }
 </script>
 <script>

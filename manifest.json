@@ -1,6 +1,7 @@
 {
+  "id": "shoga-viewer-app",
   "manifest_version": 3,
-  "version": "1.3.2",
+  "version": "1.4.0",
   "name": "Shoga Viewer",
   "short_name": "Shoga",
   "description": "A high-performance image viewer optimized for ChromeOS tablets and laptops, providing a fluid, local-first experience.",
@@ -13,6 +14,19 @@
     "productivity",
     "utilities"
   ],
+  "permissions": [
+    "storage",
+    "contextMenus"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Open Shoga Viewer"
+  },
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
   "file_handlers": [
     {
       "action": "./index.html",
