@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "version": "1.3.1",
+  "version": "1.3.2",
   "name": "Shoga Viewer",
   "short_name": "Shoga",
   "description": "A high-performance image viewer optimized for ChromeOS tablets and laptops, providing a fluid, local-first experience.",
@@ -12,6 +12,18 @@
     "photo",
     "productivity",
     "utilities"
+  ],
+  "file_handlers": [
+    {
+      "action": "./index.html",
+      "accept": {
+        "image/jpeg": [".jpg", ".jpeg"],
+        "image/png": [".png"],
+        "image/webp": [".webp"],
+        "image/gif": [".gif"],
+        "image/svg+xml": [".svg"]
+      }
+    }
   ],
   "icons": [
     {

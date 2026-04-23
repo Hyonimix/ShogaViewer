@@ -789,6 +789,7 @@ let bookmarks = [];
 let isGridRendered = false;
 let recentsEnabled = localStorage.getItem('shoga-recents-enabled') !== 'false';
 
+let isSingleFileMode = false; 
 let pendingBookmarkRestoreId = null;
 
 let prevIndex = -1, nextIndex = -1;
@@ -1496,6 +1497,7 @@ function processFileList(fileList, title) {
     
     currentIndex = 0;
     isGridRendered = false; 
+    isSingleFileMode = false; 
     
     lazyThumbnailObserver.disconnect();
     dom.gridArea.replaceChildren();
@@ -1845,6 +1847,12 @@ function commitNavigation() {
 function navigateLogical(logicalDir) {
     closeAllPanels();
     commitNavigation();
+
+    if (isSingleFileMode) {
+        dom.openDropdown.classList.add('active');
+        return;
+    }
+
     updateIndices();
     
     const targetIdx = logicalDir === 'next' ? nextIndex : prevIndex;
@@ -2030,6 +2038,44 @@ window.addEventListener('keydown', (e) => {
         if (e.key === 'ArrowLeft') navigateLogical(readDir === 'LTR' ? 'prev' : 'next');
     }
 });
+
+if ('launchQueue' in window) {
+    launchQueue.setConsumer(async (launchParams) => {
+        if (!launchParams.files.length) return;
+        
+        const handle = launchParams.files[0];
+        if (handle.kind === 'file') {
+            const file = await handle.getFile();
+            processFileList([file], file.name);
+            isSingleFileMode = true;
+            switchToViewer();
+
+            const handles = await loadDirHandles();
+            for (const item of handles) {
+                try {
+                    const path = await item.handle.resolve(handle);
+                    if (path !== null) {
+                        if (await verifyPermission(item.handle)) {
+                            dirStack = [{ handle: item.handle, name: item.name }];
+                            await processDirectoryHandle(item.handle, item.name);
+                            
+                            const targetName = file.name;
+                            const foundIndex = files.findIndex(f => f.name === targetName);
+                            if (foundIndex !== -1) {
+                                currentIndex = foundIndex;
+                            }
+                            
+                            isSingleFileMode = false;
+                            renderViewer();
+                            break;
+                        }
+                    }
+                } catch (e) {
+                }
+            }
+        }
+    });
+}
 </script>
 <script>
 if ('serviceWorker' in navigator) {
