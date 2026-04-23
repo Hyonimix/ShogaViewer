@@ -6,6 +6,7 @@
 <title>Shoga Viewer</title>
 
 <link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
 <meta name="theme-color" content="#121212">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -137,11 +138,11 @@ button:active, button.active {
     flex: 1;
 }
 
-#btn-open-main, #btn-bookmarks, #btn-settings, #btn-grid, #btn-info {
+#btn-home, #btn-open-main, #btn-bookmarks, #btn-settings, #btn-grid, #btn-info {
     padding: 10px;
 }
 
-#btn-open-main svg, #btn-bookmarks svg, #btn-settings svg, #btn-grid svg, #btn-info svg {
+#btn-home svg, #btn-open-main svg, #btn-bookmarks svg, #btn-settings svg, #btn-grid svg, #btn-info svg {
     pointer-events: none;
     display: block;
 }
@@ -216,6 +217,21 @@ button:active, button.active {
     background: rgba(255, 255, 255, 0.1);
     color: var(--text-secondary);
     border-color: transparent;
+}
+
+.subtle-icon-btn {
+    padding: 6px;
+    min-width: auto;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+    border-radius: 6px;
+}
+
+.subtle-icon-btn:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
 }
 
 #recents-list::-webkit-scrollbar {
@@ -356,6 +372,36 @@ button:active, button.active {
     color: var(--text-secondary);
 }
 
+.attribution-link {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    cursor: pointer;
+    letter-spacing: 1px;
+    text-decoration: underline;
+    transition: opacity 0.2s;
+    pointer-events: auto;
+}
+
+.attribution-link:hover {
+    opacity: 1;
+}
+
+#ptr-indicator {
+    position: absolute;
+    top: 90px;
+    left: 50%;
+    transform: translateX(-50%) rotate(0deg);
+    z-index: 40;
+    opacity: 0;
+    display: none;
+    pointer-events: none;
+}
+
 #grid-area {
     position: absolute;
     inset: 0;
@@ -368,6 +414,12 @@ button:active, button.active {
     z-index: 50;
     align-content: start;
     touch-action: pan-y;
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+#grid-area.pulling {
+    transition: none;
+    touch-action: none;
 }
 
 .grid-item {
@@ -442,12 +494,13 @@ button:active, button.active {
     background: rgba(255, 255, 255, 0.05);
     color: var(--text-primary);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 6px 12px;
+    padding: 8px 8px;
     border-radius: 8px;
-    font-size: 0.75rem;
     cursor: pointer;
     transition: background 0.2s;
-    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .btn-up:hover {
@@ -518,6 +571,12 @@ body.animating #viewer-content { transition: transform 0.35s cubic-bezier(0.15, 
 <body class="ui-hidden">
 
 <div id="top-bar">
+    <button id="btn-home" title="Home">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
+    </button>
     <div class="dropdown-wrapper">
         <button id="btn-open-main" title="Open">
             <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -533,10 +592,14 @@ body.animating #viewer-content { transition: transform 0.35s cubic-bezier(0.15, 
                 <div class="dropdown-divider"></div>
                 <div style="display:flex; justify-content:space-between; align-items:center; padding: 5px 10px;">
                     <span style="font-size: 0.7rem; color: var(--text-secondary); letter-spacing: 1px; font-weight: 600;">RECENTS</span>
-                    <button id="btn-toggle-recents" style="padding: 4px 8px; font-size: 0.65rem; min-width: auto; border-radius: 6px;">ON</button>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <button id="btn-toggle-recents" style="padding: 4px 8px; font-size: 0.65rem; min-width: auto; border-radius: 6px;">ON</button>
+                        <button id="btn-clear-recents" class="subtle-icon-btn" title="Clear Recents">
+                            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                    </div>
                 </div>
                 <div id="recents-list" style="max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;"></div>
-                <button id="btn-clear-recents" style="margin-top: 4px; font-size: 0.7rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);">CLEAR RECENTS</button>
             </div>
         </div>
     </div>
@@ -565,8 +628,15 @@ body.animating #viewer-content { transition: transform 0.35s cubic-bezier(0.15, 
     </button>
     <button id="btn-settings" title="Settings">
         <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            <line x1="4" y1="21" x2="4" y2="14"></line>
+            <line x1="4" y1="10" x2="4" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12" y2="3"></line>
+            <line x1="20" y1="21" x2="20" y2="16"></line>
+            <line x1="20" y1="12" x2="20" y2="3"></line>
+            <line x1="1" y1="14" x2="7" y2="14"></line>
+            <line x1="9" y1="8" x2="15" y2="8"></line>
+            <line x1="17" y1="16" x2="23" y2="16"></line>
         </svg>
     </button>
 </div>
@@ -605,6 +675,15 @@ body.animating #viewer-content { transition: transform 0.35s cubic-bezier(0.15, 
     <div id="info-content"></div>
 </div>
 
+<div id="license-panel" class="panel hidden">
+    <div class="panel-title">Open Source Licenses</div>
+    <div style="font-size: 0.7rem; line-height: 1.5; color: var(--text-secondary); max-height: 250px; overflow-y: auto; padding-right: 5px;">
+        <p><strong>Feather Icons</strong><br>Copyright (c) 2013-2017 Cole Bemis<br>Licensed under the MIT License.</p>
+        <p><strong>Inter Font</strong><br>Copyright (c) 2016 Rasmus Andersson<br>Licensed under the SIL Open Font License 1.1.</p>
+        <p>This software also utilizes standard browser APIs and native system font stacks for performance and compatibility.</p>
+    </div>
+</div>
+
 <div id="bookmarks-panel">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 10px;">
         <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary); letter-spacing: 1px;">BOOKMARKS</div>
@@ -620,6 +699,10 @@ body.animating #viewer-content { transition: transform 0.35s cubic-bezier(0.15, 
     <div id="idle-screen">
         <h1>SHOGA</h1>
         <p>VISUAL INTELLIGENCE ENGINE</p>
+        <div class="attribution-link">OPEN SOURCE LICENSES</div>
+    </div>
+    <div id="ptr-indicator">
+        <svg viewBox="0 0 24 24" width="24" height="24" stroke="var(--text-secondary)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
     </div>
     <div id="grid-area"></div>
     <div id="viewer-area">
@@ -786,6 +869,7 @@ const dom = {
     topBar: document.getElementById('top-bar'),
     btnOpenMain: document.getElementById('btn-open-main'),
     openDropdown: document.getElementById('open-dropdown'),
+    btnHome: document.getElementById('btn-home'),
     btnOpenFiles: document.getElementById('btn-open-files'),
     btnOpenDir: document.getElementById('btn-open-dir'),
     fallbackInputFiles: document.getElementById('fallback-input-files'),
@@ -802,11 +886,14 @@ const dom = {
     coverSettingGroup: document.getElementById('cover-setting-group'),
     infoPanel: document.getElementById('info-panel'),
     infoContent: document.getElementById('info-content'),
+    licensePanel: document.getElementById('license-panel'),
+    attributionLink: document.querySelector('.attribution-link'),
     bookmarksPanel: document.getElementById('bookmarks-panel'),
     btnAddBookmark: document.getElementById('btn-add-bookmark'),
     btnClearBookmarks: document.getElementById('btn-clear-bookmarks'),
     bookmarksList: document.getElementById('bookmarks-list'),
     idleScreen: document.getElementById('idle-screen'),
+    ptrIndicator: document.getElementById('ptr-indicator'),
     gridArea: document.getElementById('grid-area'),
     viewerArea: document.getElementById('viewer-area'),
     viewerSlider: document.getElementById('viewer-slider'),
@@ -842,6 +929,7 @@ function switchToIdle() {
 function closeAllPanels() {
     dom.settingsPanel.classList.add('hidden');
     dom.infoPanel.classList.add('hidden');
+    dom.licensePanel.classList.add('hidden');
     dom.openDropdown.classList.remove('active');
     dom.bookmarksPanel.classList.remove('active');
 }
@@ -1019,10 +1107,13 @@ async function restoreBookmark(id) {
             if (matchedItem) {
                 if (await verifyPermission(matchedItem.handle)) {
                     const fileList = [];
+                    const folderList = [];
                     for await (const entry of matchedItem.handle.values()) {
                         if (entry.kind === 'file') {
                             const file = await entry.getFile();
                             if (file.type.startsWith('image/')) fileList.push(file);
+                        } else if (entry.kind === 'directory') {
+                            folderList.push(entry);
                         }
                     }
                     const newFiles = fileList.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
@@ -1031,7 +1122,11 @@ async function restoreBookmark(id) {
                     bk.state.fileNames.forEach(name => {
                         if (newNameMap.has(name)) restoredFiles.push(newNameMap.get(name));
                     });
-                    if (restoredFiles.length > 0) autoRestored = true;
+                    if (restoredFiles.length > 0) {
+                        autoRestored = true;
+                        currentFolders = folderList.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
+                        dirStack = [{ handle: matchedItem.handle, name: matchedItem.name }];
+                    }
                 }
             }
         }
@@ -1161,6 +1256,24 @@ dom.btnOpenMain.addEventListener('click', (e) => {
     if (!isActive) dom.openDropdown.classList.add('active'); 
 });
 
+dom.btnHome.addEventListener('click', () => {
+    dom.openDropdown.classList.remove('active');
+    files = [];
+    currentFolders = [];
+    dirStack = [];
+    currentIndex = 0;
+    urlCache.forEach(url => URL.revokeObjectURL(url));
+    urlCache.clear();
+    currentTitle = 'Shoga Viewer';
+    document.title = currentTitle;
+    dom.gridArea.replaceChildren();
+    dom.slots.prev.replaceChildren();
+    dom.viewerContent.replaceChildren();
+    dom.slots.next.replaceChildren();
+    isGridRendered = false;
+    switchToIdle();
+});
+
 dom.btnOpenFiles.addEventListener('click', () => { 
     dom.openDropdown.classList.remove('active'); 
     dirStack = [];
@@ -1247,9 +1360,17 @@ dom.btnBookmarks.addEventListener('click', (e) => {
 
 dom.btnGrid.addEventListener('click', () => switchToGrid());
 
+dom.attributionLink.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = dom.licensePanel.classList.contains('hidden');
+    closeAllPanels();
+    if (isHidden) dom.licensePanel.classList.remove('hidden');
+});
+
 document.addEventListener('click', (e) => {
     if (!dom.settingsPanel.contains(e.target) && e.target !== dom.btnSettings) dom.settingsPanel.classList.add('hidden');
     if (!dom.infoPanel.contains(e.target) && e.target !== dom.btnInfo) dom.infoPanel.classList.add('hidden');
+    if (!dom.licensePanel.contains(e.target) && e.target !== dom.attributionLink) dom.licensePanel.classList.add('hidden');
     if (!dom.openDropdown.contains(e.target) && e.target !== dom.btnOpenMain) dom.openDropdown.classList.remove('active');
     if (!dom.bookmarksPanel.contains(e.target) && e.target !== dom.btnBookmarks && !dom.btnBookmarks.contains(e.target)) dom.bookmarksPanel.classList.remove('active');
 });
@@ -1350,7 +1471,7 @@ function switchToGrid() {
             if (dirStack.length > 1) {
                 const btnUp = document.createElement('button');
                 btnUp.className = 'btn-up';
-                btnUp.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><polyline points="15 18 9 12 15 6"></polyline></svg>UP`;
+                btnUp.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 10 4 15 9 20"></polyline><path d="M20 4v7a4 4 0 0 1-4 4H4"></path></svg>`;
                 btnUp.addEventListener('click', async () => {
                     dirStack.pop();
                     const parent = dirStack[dirStack.length - 1];
@@ -1407,6 +1528,77 @@ dom.gridArea.addEventListener('click', (e) => {
         switchToViewer();
     }
 });
+
+let gridPtrStartY = 0;
+let gridPtrDistance = 0;
+let isGridPulling = false;
+const GRID_PTR_THRESHOLD = 80;
+
+dom.gridArea.addEventListener('pointerdown', (e) => {
+    if (viewMode === 'GRID' && dom.gridArea.scrollTop <= 0) {
+        isGridPulling = true;
+        gridPtrStartY = e.clientY;
+        gridPtrDistance = 0;
+    }
+});
+
+dom.gridArea.addEventListener('pointermove', (e) => {
+    if (!isGridPulling) return;
+    const dy = e.clientY - gridPtrStartY;
+    
+    if (dy > 0 && dom.gridArea.scrollTop <= 0) {
+        if (!dom.gridArea.classList.contains('pulling')) {
+            dom.gridArea.classList.add('pulling');
+            dom.ptrIndicator.style.display = 'block';
+        }
+        gridPtrDistance = dy * 0.4; 
+        dom.gridArea.style.transform = `translateY(${gridPtrDistance}px)`;
+        dom.ptrIndicator.style.opacity = Math.min(gridPtrDistance / GRID_PTR_THRESHOLD, 1);
+        dom.ptrIndicator.style.transform = `translateX(-50%) rotate(${gridPtrDistance * 2}deg)`;
+        
+        if (e.cancelable) e.preventDefault();
+    } else if (dy < 0) {
+        isGridPulling = false;
+        dom.gridArea.classList.remove('pulling');
+    }
+}, { passive: false });
+
+const endGridPull = async () => {
+    if (!isGridPulling && !dom.gridArea.classList.contains('pulling')) return;
+    isGridPulling = false;
+    dom.gridArea.classList.remove('pulling');
+    
+    if (gridPtrDistance >= GRID_PTR_THRESHOLD) {
+        dom.ptrIndicator.style.transition = 'transform 0.5s linear';
+        dom.ptrIndicator.style.transform = `translateX(-50%) rotate(360deg)`;
+        dom.gridArea.style.transform = `translateY(${GRID_PTR_THRESHOLD / 2}px)`;
+        
+        if (dirStack.length > 0) {
+            const current = dirStack[dirStack.length - 1];
+            if (await verifyPermission(current.handle)) {
+                await processDirectoryHandle(current.handle, current.name);
+            }
+        } else {
+            await new Promise(r => setTimeout(r, 400));
+        }
+        
+        dom.ptrIndicator.style.opacity = 0;
+        dom.gridArea.style.transform = 'translateY(0px)';
+        setTimeout(() => { 
+            dom.ptrIndicator.style.display = 'none'; 
+            dom.ptrIndicator.style.transition = ''; 
+        }, 300);
+    } else {
+        dom.ptrIndicator.style.opacity = 0;
+        dom.gridArea.style.transform = 'translateY(0px)';
+        setTimeout(() => { dom.ptrIndicator.style.display = 'none'; }, 300);
+    }
+    gridPtrDistance = 0;
+};
+
+dom.gridArea.addEventListener('pointerup', endGridPull);
+dom.gridArea.addEventListener('pointercancel', endGridPull);
+dom.gridArea.addEventListener('pointerleave', endGridPull);
 
 function switchToViewer() {
     viewMode = 'VIEWER';
@@ -1555,6 +1747,7 @@ function commitNavigation() {
         }
         dom.body.classList.remove('animating');
         dom.viewerSlider.style.transform = `translateX(0px)`;
+        void dom.viewerSlider.offsetWidth;
         renderViewer();
     }
 }
@@ -1568,7 +1761,10 @@ function navigateLogical(logicalDir) {
     if (targetIdx < 0 || targetIdx >= files.length) {
         dom.body.classList.add('animating');
         dom.viewerSlider.style.transform = `translateX(0px)`;
-        setTimeout(() => dom.body.classList.remove('animating'), 350);
+        navTimeout = setTimeout(() => {
+            dom.body.classList.remove('animating');
+            navTimeout = null;
+        }, 350);
         return;
     }
 
