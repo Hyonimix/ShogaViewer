@@ -180,7 +180,7 @@ button:active, button.active {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    min-width: 180px;
+    min-width: 220px;
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.2s, visibility 0.2s, transform 0.2s;
@@ -204,6 +204,27 @@ button:active, button.active {
 
 .dropdown-menu button:hover {
     background: rgba(255, 255, 255, 0.05);
+}
+
+.dropdown-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 5px 0;
+}
+
+#btn-toggle-recents.off {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
+    border-color: transparent;
+}
+
+#recents-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+#recents-list::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
 }
 
 .info-row {
@@ -335,23 +356,6 @@ button:active, button.active {
     color: var(--text-secondary);
 }
 
-#btn-restore-session {
-    display: none;
-    pointer-events: auto;
-    margin-top: 40px;
-    border-color: var(--accent);
-    color: var(--accent);
-    background: rgba(58, 130, 246, 0.1);
-    font-size: 0.9rem;
-    padding: 12px 24px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-}
-
-#btn-restore-session:hover {
-    background: var(--accent);
-    color: #fff;
-}
-
 #grid-area {
     position: absolute;
     inset: 0;
@@ -409,6 +413,45 @@ button:active, button.active {
     padding: 2px 6px;
     border-radius: 10px;
     pointer-events: none;
+}
+
+.folder-item {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 12px 16px;
+    border-radius: var(--border-radius);
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.2s, transform 0.1s;
+    font-weight: 600;
+}
+
+.folder-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.folder-item:active {
+    transform: scale(0.98);
+}
+
+.btn-up {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: background 0.2s;
+    font-weight: 600;
+}
+
+.btn-up:hover {
+    background: rgba(255, 255, 255, 0.15);
 }
 
 #viewer-area {
@@ -486,6 +529,15 @@ body.animating #viewer-content { transition: transform 0.35s cubic-bezier(0.15, 
         <div id="open-dropdown" class="dropdown-menu">
             <button id="btn-open-files">SELECT FILE(S)</button>
             <button id="btn-open-dir">SELECT DIRECTORY</button>
+            <div id="recents-section" style="display:none;">
+                <div class="dropdown-divider"></div>
+                <div style="display:flex; justify-content:space-between; align-items:center; padding: 5px 10px;">
+                    <span style="font-size: 0.7rem; color: var(--text-secondary); letter-spacing: 1px; font-weight: 600;">RECENTS</span>
+                    <button id="btn-toggle-recents" style="padding: 4px 8px; font-size: 0.65rem; min-width: auto; border-radius: 6px;">ON</button>
+                </div>
+                <div id="recents-list" style="max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;"></div>
+                <button id="btn-clear-recents" style="margin-top: 4px; font-size: 0.7rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);">CLEAR RECENTS</button>
+            </div>
         </div>
     </div>
     <input type="file" id="fallback-input-files" multiple accept="image/*" style="display:none;">
@@ -568,7 +620,6 @@ body.animating #viewer-content { transition: transform 0.35s cubic-bezier(0.15, 
     <div id="idle-screen">
         <h1>SHOGA</h1>
         <p>VISUAL INTELLIGENCE ENGINE</p>
-        <button id="btn-restore-session">RESTORE SESSION</button>
     </div>
     <div id="grid-area"></div>
     <div id="viewer-area">
@@ -582,6 +633,8 @@ body.animating #viewer-content { transition: transform 0.35s cubic-bezier(0.15, 
 
 <script>
 let files = [];
+let currentFolders = [];
+let dirStack = [];
 let currentIndex = 0;
 let layoutMode = 'SINGLE';
 let readDir = 'LTR';
@@ -592,6 +645,7 @@ let viewMode = 'IDLE';
 let currentTitle = 'Shoga Viewer';
 let bookmarks = [];
 let isGridRendered = false;
+let recentsEnabled = localStorage.getItem('shoga-recents-enabled') !== 'false';
 
 let pendingBookmarkRestoreId = null;
 
@@ -676,27 +730,48 @@ async function deleteBookmarkFromDB(id) {
 }
 
 async function saveDirHandle(handle) {
+    if (!recentsEnabled) return;
     try {
         const db = await initDB();
         return new Promise((resolve, reject) => {
             const tx = db.transaction(STORE_HANDLES, 'readwrite');
-            tx.objectStore(STORE_HANDLES).put(handle, 'lastDir');
+            const store = tx.objectStore(STORE_HANDLES);
+            const req = store.get('recent-handles');
+            req.onsuccess = () => {
+                let handles = req.result || [];
+                handles = handles.filter(h => h.name !== handle.name);
+                handles.unshift({ name: handle.name, handle: handle, ts: Date.now() });
+                handles = handles.slice(0, 5); 
+                store.put(handles, 'recent-handles');
+            };
             tx.oncomplete = () => { db.close(); resolve(); };
             tx.onerror = (e) => { db.close(); reject(e.target.error); };
         });
     } catch (err) {}
 }
 
-async function loadDirHandle() {
+async function loadDirHandles() {
     try {
         const db = await initDB();
         return new Promise((resolve) => {
             const tx = db.transaction(STORE_HANDLES, 'readonly');
-            const req = tx.objectStore(STORE_HANDLES).get('lastDir');
-            req.onsuccess = () => { db.close(); resolve(req.result); };
-            req.onerror = () => { db.close(); resolve(null); };
+            const req = tx.objectStore(STORE_HANDLES).get('recent-handles');
+            req.onsuccess = () => { db.close(); resolve(req.result || []); };
+            req.onerror = () => { db.close(); resolve([]); };
         });
-    } catch (err) { return null; }
+    } catch (err) { return []; }
+}
+
+async function clearDirHandles() {
+    try {
+        const db = await initDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_HANDLES, 'readwrite');
+            tx.objectStore(STORE_HANDLES).delete('recent-handles');
+            tx.oncomplete = () => { db.close(); resolve(); };
+            tx.onerror = (e) => { db.close(); reject(e.target.error); };
+        });
+    } catch(e) {}
 }
 
 async function verifyPermission(fileHandle) {
@@ -715,6 +790,10 @@ const dom = {
     btnOpenDir: document.getElementById('btn-open-dir'),
     fallbackInputFiles: document.getElementById('fallback-input-files'),
     fallbackInputDir: document.getElementById('fallback-input-dir'),
+    recentsSection: document.getElementById('recents-section'),
+    btnToggleRecents: document.getElementById('btn-toggle-recents'),
+    btnClearRecents: document.getElementById('btn-clear-recents'),
+    recentsList: document.getElementById('recents-list'),
     btnGrid: document.getElementById('btn-grid'),
     btnInfo: document.getElementById('btn-info'),
     btnBookmarks: document.getElementById('btn-bookmarks'),
@@ -728,7 +807,6 @@ const dom = {
     btnClearBookmarks: document.getElementById('btn-clear-bookmarks'),
     bookmarksList: document.getElementById('bookmarks-list'),
     idleScreen: document.getElementById('idle-screen'),
-    btnRestoreSession: document.getElementById('btn-restore-session'),
     gridArea: document.getElementById('grid-area'),
     viewerArea: document.getElementById('viewer-area'),
     viewerSlider: document.getElementById('viewer-slider'),
@@ -754,30 +832,10 @@ function switchToIdle() {
     bookmarks = await loadBookmarksFromDB();
     renderBookmarks();
     if (window.showDirectoryPicker) {
-        const handle = await loadDirHandle();
-        if (handle) {
-            dom.idleScreen.querySelector('h1').textContent = 'SHOGA';
-            dom.idleScreen.querySelector('p').textContent = 'VISUAL INTELLIGENCE ENGINE';
-            dom.btnRestoreSession.textContent = `RESTORE: ${handle.name}`;
-            dom.btnRestoreSession.style.display = 'block';
-            
-            dom.btnRestoreSession.onclick = async () => {
-                const originalText = dom.btnRestoreSession.textContent;
-                dom.btnRestoreSession.textContent = 'LOADING...';
-                if (await verifyPermission(handle)) {
-                    const fileList = [];
-                    for await (const entry of handle.values()) {
-                        if (entry.kind === 'file') {
-                            const file = await entry.getFile();
-                            if (file.type.startsWith('image/')) fileList.push(file);
-                        }
-                    }
-                    processFileList(fileList, handle.name);
-                } else {
-                    dom.btnRestoreSession.textContent = originalText;
-                }
-            };
-        }
+        dom.recentsSection.style.display = 'block';
+        dom.btnToggleRecents.textContent = recentsEnabled ? 'ON' : 'OFF';
+        dom.btnToggleRecents.classList.toggle('off', !recentsEnabled);
+        renderRecents();
     }
 })();
 
@@ -862,6 +920,48 @@ async function captureThumbnail() {
     }
 }
 
+async function renderRecents() {
+    dom.recentsList.innerHTML = '';
+    const handles = await loadDirHandles();
+    handles.forEach(item => {
+        const btn = document.createElement('button');
+        btn.className = 'recent-item';
+        btn.textContent = item.name;
+        btn.style.fontSize = '0.75rem';
+        btn.addEventListener('click', async () => {
+            dom.openDropdown.classList.remove('active');
+            if (await verifyPermission(item.handle)) {
+                dirStack = [{ handle: item.handle, name: item.name }];
+                await processDirectoryHandle(item.handle, item.name);
+            }
+        });
+        dom.recentsList.appendChild(btn);
+    });
+    if (handles.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.padding = '10px 15px';
+        empty.style.color = 'var(--text-secondary)';
+        empty.style.fontSize = '0.7rem';
+        empty.style.textAlign = 'center';
+        empty.textContent = 'NO RECENT SESSIONS';
+        dom.recentsList.appendChild(empty);
+    }
+}
+
+dom.btnToggleRecents.addEventListener('click', (e) => {
+    e.stopPropagation();
+    recentsEnabled = !recentsEnabled;
+    localStorage.setItem('shoga-recents-enabled', recentsEnabled);
+    dom.btnToggleRecents.textContent = recentsEnabled ? 'ON' : 'OFF';
+    dom.btnToggleRecents.classList.toggle('off', !recentsEnabled);
+});
+
+dom.btnClearRecents.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await clearDirHandles();
+    renderRecents();
+});
+
 function renderBookmarks() {
     dom.bookmarksList.innerHTML = '';
     bookmarks.sort((a, b) => b.lastAccessed - a.lastAccessed).forEach(bk => {
@@ -914,11 +1014,12 @@ async function restoreBookmark(id) {
     if (restoredFiles.length === 0) {
         let autoRestored = false;
         if (window.showDirectoryPicker) {
-            const handle = await loadDirHandle();
-            if (handle && handle.name === bk.title) {
-                if (await verifyPermission(handle)) {
+            const handles = await loadDirHandles();
+            const matchedItem = handles.find(h => h.name === bk.title);
+            if (matchedItem) {
+                if (await verifyPermission(matchedItem.handle)) {
                     const fileList = [];
-                    for await (const entry of handle.values()) {
+                    for await (const entry of matchedItem.handle.values()) {
                         if (entry.kind === 'file') {
                             const file = await entry.getFile();
                             if (file.type.startsWith('image/')) fileList.push(file);
@@ -939,15 +1040,13 @@ async function restoreBookmark(id) {
             pendingBookmarkRestoreId = id;
             dom.idleScreen.querySelector('h1').textContent = 'RESTORE BOOKMARK';
             dom.idleScreen.querySelector('p').textContent = `Please select the folder: [ ${bk.title} ]`;
-            dom.btnRestoreSession.textContent = 'SELECT FOLDER';
-            dom.btnRestoreSession.style.display = 'block';
-            
-            dom.btnRestoreSession.onclick = () => {
-                if (window.showDirectoryPicker) handleDirectoryPicker();
-                else dom.fallbackInputDir.click();
-            };
             closeAllPanels();
             switchToIdle();
+            
+            setTimeout(() => {
+                if (window.showDirectoryPicker) handleDirectoryPicker();
+                else dom.fallbackInputDir.click();
+            }, 100);
             return;
         }
     }
@@ -1064,21 +1163,33 @@ dom.btnOpenMain.addEventListener('click', (e) => {
 
 dom.btnOpenFiles.addEventListener('click', () => { 
     dom.openDropdown.classList.remove('active'); 
+    dirStack = [];
+    currentFolders = [];
     dom.fallbackInputFiles.click(); 
 });
+
+async function processDirectoryHandle(handle, titleOverride = null) {
+    const fileList = [];
+    currentFolders = [];
+    for await (const entry of handle.values()) {
+        if (entry.kind === 'file') {
+            const file = await entry.getFile();
+            if (file.type.startsWith('image/')) fileList.push(file);
+        } else if (entry.kind === 'directory') {
+            currentFolders.push(entry);
+        }
+    }
+    currentFolders.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
+    processFileList(fileList, titleOverride || handle.name);
+}
 
 async function handleDirectoryPicker() {
     try {
         const handle = await window.showDirectoryPicker();
+        dirStack = [{ handle: handle, name: handle.name }];
         await saveDirHandle(handle);
-        const fileList = [];
-        for await (const entry of handle.values()) {
-            if (entry.kind === 'file') {
-                const file = await entry.getFile();
-                if (file.type.startsWith('image/')) fileList.push(file);
-            }
-        }
-        processFileList(fileList, handle.name);
+        await renderRecents();
+        await processDirectoryHandle(handle);
     } catch(e) {}
 }
 
@@ -1087,6 +1198,8 @@ dom.btnOpenDir.addEventListener('click', () => {
     if (window.showDirectoryPicker) {
         handleDirectoryPicker();
     } else {
+        dirStack = [];
+        currentFolders = [];
         dom.fallbackInputDir.click();
     }
 });
@@ -1190,11 +1303,10 @@ function processFileList(fileList, title) {
         document.title = currentTitle;
     }
     
-    if (files.length > 0) { 
+    if (files.length > 0 || currentFolders.length > 0) { 
         dom.idleScreen.style.display = 'none'; 
         dom.idleScreen.querySelector('h1').textContent = 'SHOGA';
         dom.idleScreen.querySelector('p').textContent = 'VISUAL INTELLIGENCE ENGINE';
-        dom.btnRestoreSession.style.display = 'none';
         
         if (pendingBookmarkRestoreId) {
             const id = pendingBookmarkRestoreId;
@@ -1218,17 +1330,57 @@ function switchToGrid() {
         lazyThumbnailObserver.disconnect();
         dom.gridArea.innerHTML = '';
         
-        const titleHeader = document.createElement('div');
-        titleHeader.textContent = currentTitle;
-        titleHeader.style.gridColumn = '1 / -1';
-        titleHeader.style.fontSize = '0.85rem';
-        titleHeader.style.color = 'var(--text-secondary)';
-        titleHeader.style.letterSpacing = '1px';
-        titleHeader.style.marginBottom = '10px';
-        titleHeader.style.fontWeight = '600';
-        titleHeader.style.textAlign = 'left';
-        titleHeader.style.paddingLeft = '5px';
-        dom.gridArea.appendChild(titleHeader);
+        if (dirStack.length > 0 || currentFolders.length > 0) {
+            const headerContainer = document.createElement('div');
+            headerContainer.style.gridColumn = '1 / -1';
+            headerContainer.style.display = 'flex';
+            headerContainer.style.justifyContent = 'space-between';
+            headerContainer.style.alignItems = 'center';
+            headerContainer.style.marginBottom = '15px';
+            
+            const titleSpan = document.createElement('span');
+            titleSpan.textContent = currentTitle;
+            titleSpan.style.fontSize = '0.85rem';
+            titleSpan.style.color = 'var(--text-secondary)';
+            titleSpan.style.letterSpacing = '1px';
+            titleSpan.style.fontWeight = '600';
+            titleSpan.style.paddingLeft = '5px';
+            headerContainer.appendChild(titleSpan);
+            
+            if (dirStack.length > 1) {
+                const btnUp = document.createElement('button');
+                btnUp.className = 'btn-up';
+                btnUp.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><polyline points="15 18 9 12 15 6"></polyline></svg>UP`;
+                btnUp.addEventListener('click', async () => {
+                    dirStack.pop();
+                    const parent = dirStack[dirStack.length - 1];
+                    await processDirectoryHandle(parent.handle, parent.name);
+                });
+                headerContainer.appendChild(btnUp);
+            }
+            dom.gridArea.appendChild(headerContainer);
+        }
+        
+        if (currentFolders.length > 0) {
+            const folderContainer = document.createElement('div');
+            folderContainer.style.gridColumn = '1 / -1';
+            folderContainer.style.display = 'flex';
+            folderContainer.style.flexWrap = 'wrap';
+            folderContainer.style.gap = '10px';
+            folderContainer.style.marginBottom = '20px';
+            
+            currentFolders.forEach(folder => {
+                const folderItem = document.createElement('div');
+                folderItem.className = 'folder-item';
+                folderItem.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> <span>${folder.name}</span>`;
+                folderItem.addEventListener('click', async () => {
+                    dirStack.push({ handle: folder, name: folder.name });
+                    await processDirectoryHandle(folder, folder.name);
+                });
+                folderContainer.appendChild(folderItem);
+            });
+            dom.gridArea.appendChild(folderContainer);
+        }
 
         files.forEach((file, index) => {
             const item = document.createElement('div');
