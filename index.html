@@ -658,10 +658,10 @@ button:active, button.active {
     image-rendering: auto;
 }
 
-.fit-contain img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.fit-contain img { max-width: 100%; max-height: 100%; object-fit: contain; width: var(--orig-w, auto); height: var(--orig-h, auto); }
 .fit-width img { width: 100%; height: auto; }
 .fit-height img { height: 100%; width: auto; }
-.fit-original img { width: auto; height: auto; max-width: none; max-height: none; }
+.fit-original img { width: var(--orig-w, auto); height: var(--orig-h, auto); max-width: none; max-height: none; }
 
 .view-spread.fit-contain img { max-width: 50%; }
 .view-spread.fit-width img { width: 50%; }
@@ -2092,36 +2092,18 @@ function applyFSROverlays() {
         const nh = parseInt(img.dataset.origNh) || img.naturalHeight;
         if (!nw || !nh) return;
 
-        const rect = img.getBoundingClientRect();
-        const scale = Math.min(rect.width / nw, rect.height / nh);
-        
-        let renderW = Math.round(nw * scale);
-        let renderH = Math.round(nh * scale);
-        
-        if (renderW === 0 || renderH === 0) return;
-
-        const targetRatio = renderW / nw;
-
         let MAX_DIM = 16384;
-        
-        if (renderW > MAX_DIM || renderH > MAX_DIM) {
-            const clampScale = Math.min(MAX_DIM / renderW, MAX_DIM / renderH);
-            renderW = Math.floor(renderW * clampScale);
-            renderH = Math.floor(renderH * clampScale);
-        }
-
         let actualMode = upscaleMode;
         let fsrRatio = 1;
+        let processNw = nw;
+        let processNh = nh;
         
         if (upscaleMode !== 'BILINEAR') {
-            if (nw * 1.25 > MAX_DIM || nh * 1.25 > MAX_DIM) {
-                actualMode = 'BILINEAR';
-                fsrDisabledDueToSize = true;
-            } else {
-                if (targetRatio <= 1.25) fsrRatio = 1.25;
-                else if (targetRatio <= 1.5) fsrRatio = 1.5;
-                else if (targetRatio <= 1.75) fsrRatio = 1.75;
-                else fsrRatio = 2.0;
+            fsrRatio = 2.0;
+            if (nw * 2.0 > MAX_DIM || nh * 2.0 > MAX_DIM) {
+                const downscaleRatio = 8192 / Math.max(nw, nh);
+                processNw = Math.floor(nw * downscaleRatio);
+                processNh = Math.floor(nh * downscaleRatio);
             }
         }
 
@@ -2150,11 +2132,11 @@ function applyFSROverlays() {
             return;
         }
 
-        const cacheKey = img.dataset.originalUrl + '_' + renderW + '_' + actualMode + '_' + fsrRatio;
+        const cacheKey = img.dataset.originalUrl + '_' + actualMode + '_' + fsrRatio;
         if (img.dataset.fsrAppliedTier === cacheKey || img.dataset.fsrProcessingKey === cacheKey) return;
 
-        const upscaleW = Math.ceil(nw * fsrRatio);
-        const upscaleH = Math.ceil(nh * fsrRatio);
+        const upscaleW = Math.ceil(processNw * fsrRatio);
+        const upscaleH = Math.ceil(processNh * fsrRatio);
 
         const applyUpscaledImage = async (url) => {
             if (!dom.viewerContent.contains(img) || img.dataset.fsrProcessingKey !== cacheKey) return;
@@ -2214,30 +2196,28 @@ function applyFSROverlays() {
                         return;
                     }
                     
+                    let sourceForWebGL = srcImg;
+                    if (processNw !== nw || processNh !== nh) {
+                        const downscaleCanvas = document.createElement('canvas');
+                        downscaleCanvas.width = processNw;
+                        downscaleCanvas.height = processNh;
+                        const downscaleCtx = downscaleCanvas.getContext('2d');
+                        downscaleCtx.imageSmoothingEnabled = true;
+                        downscaleCtx.imageSmoothingQuality = 'high';
+                        downscaleCtx.drawImage(srcImg, 0, 0, processNw, processNh);
+                        sourceForWebGL = downscaleCanvas;
+                    }
+                    
                     const finalCanvas = document.createElement('canvas');
-                    finalCanvas.width = renderW;
-                    finalCanvas.height = renderH;
-                    const finalCtx = finalCanvas.getContext('2d');
-                    finalCtx.imageSmoothingEnabled = false;
+                    finalCanvas.width = upscaleW;
+                    finalCanvas.height = upscaleH;
                     
                     if (actualMode === 'FSR') {
-                        const tempCanvas = document.createElement('canvas');
-                        tempCanvas.width = upscaleW;
-                        tempCanvas.height = upscaleH;
-                        renderFSR(srcImg, tempCanvas, upscaleW, upscaleH, nw, nh, 1.0);
-                        finalCtx.drawImage(tempCanvas, 0, 0, renderW, renderH);
+                        renderFSR(sourceForWebGL, finalCanvas, upscaleW, upscaleH, processNw, processNh, 0.5);
                     } else if (actualMode === 'ANIME4X') {
-                        const tempCanvas = document.createElement('canvas');
-                        tempCanvas.width = upscaleW;
-                        tempCanvas.height = upscaleH;
-                        renderAnime4xLite(srcImg, tempCanvas, upscaleW, upscaleH, nw, nh);
-                        finalCtx.drawImage(tempCanvas, 0, 0, renderW, renderH);
+                        renderAnime4xLite(sourceForWebGL, finalCanvas, upscaleW, upscaleH, processNw, processNh);
                     } else if (actualMode === 'XBRZ') {
-                        const tempCanvas = document.createElement('canvas');
-                        tempCanvas.width = upscaleW;
-                        tempCanvas.height = upscaleH;
-                        renderXBRZLite(srcImg, tempCanvas, upscaleW, upscaleH, nw, nh);
-                        finalCtx.drawImage(tempCanvas, 0, 0, renderW, renderH);
+                        renderXBRZLite(sourceForWebGL, finalCanvas, upscaleW, upscaleH, processNw, processNh);
                     }
                     
                     setTimeout(() => {
@@ -2251,7 +2231,7 @@ function applyFSROverlays() {
                         
                         finalCanvas.toBlob(blob => {
                             const newUrl = URL.createObjectURL(blob);
-                            if (upscaleCache.size >= 12) {
+                            if (upscaleCache.size >= 24) {
                                 const firstKey = upscaleCache.keys().next().value;
                                 URL.revokeObjectURL(upscaleCache.get(firstKey));
                                 upscaleCache.delete(firstKey);
@@ -2691,6 +2671,8 @@ function populateSlot(slot, targetIndex) {
                     this.dataset.origNw = this.naturalWidth;
                     this.dataset.origNh = this.naturalHeight;
                     this.style.aspectRatio = `${this.naturalWidth} / ${this.naturalHeight}`;
+                    this.style.setProperty('--orig-w', `${this.naturalWidth}px`);
+                    this.style.setProperty('--orig-h', `${this.naturalHeight}px`);
                 }
             };
             slot.appendChild(img);

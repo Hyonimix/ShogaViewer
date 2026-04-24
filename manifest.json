@@ -1,7 +1,7 @@
 {
   "id": "shoga-viewer-app",
   "manifest_version": 3,
-  "version": "1.5.2",
+  "version": "1.5.3",
   "name": "Shoga Viewer",
   "short_name": "Shoga",
   "description": "A high-performance image viewer optimized for ChromeOS tablets and laptops, providing a fluid, local-first experience.",
