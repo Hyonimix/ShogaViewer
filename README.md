@@ -1,10 +1,11 @@
 # Shoga Viewer
-Shoga Viewer is a high-performance image viewer specifically optimized for **ChromeOS-powered tablets and laptops**. It provides a fluid, distraction-free environment, leveraging modern browser capabilities to deliver a local-first experience with uncompromising speed on ChromeOS devices.
+Shoga Viewer is a high-performance image and manga viewer specifically optimized for **ChromeOS-powered tablets and laptops**. It provides a fluid, distraction-free environment, leveraging modern browser capabilities to deliver a local-first experience with uncompromising speed on ChromeOS devices.
 
 ## Key Attributes
+* **Ultimate Manga Reader**: Seamlessly switch between Single and Spread (dual-page) modes. With native support for Right-to-Left (RTL) reading directions and multiple viewport fit options, it offers the perfect environment for reading manga and comics.
+* **Real-Time Upscaling**: Breathe new life into low-resolution images. Features multiple built-in, real-time upscaling algorithms including AMD FSR (Photo/Realism), Anime4K (Illustration/Anime), xBRZ (Pixel Art), and Bilinear smoothing.
 * **FileSystem Integration**: Direct access to local directories via the FileSystem Access API, ensuring privacy and eliminating the need for file uploads.
 * **Hardware Acceleration**: Efficient thumbnail generation and hardware-accelerated image decoding for near-zero latency, even with thousands of assets.
-* **Adaptive Layouts**: Seamless switching between Single and Spread (dual-page) modes, with support for LTR/RTL reading directions and multiple viewport fit options.
 * **Fluid Interaction**: Precision-tuned touch and mouse gestures for zooming, panning, and navigation, optimized for ChromeOS tablet and laptop workflows.
 * **Session Persistence**: Automatic tracking of recent sessions and specific reading points (bookmarks) using IndexedDB.
 
@@ -21,7 +22,7 @@ Click the folder icon in the top navigation bar and select **"SELECT DIRECTORY"*
 ### 3. Display Control
 * **Zoom & Pan**: Use a mouse wheel or pinch gesture to zoom. Click/touch and drag to move through enlarged images. Double-tap to reset the view to its original scale.
 * **Interface Visibility**: Tap the center of the screen to toggle the visibility of the navigation and status bars.
-* **Settings**: Adjust the layout architecture (Single/Spread), reading direction, and image fit modes (Contain, Width, Height, Original) through the settings panel.
+* **Settings & Upscaling**: Adjust the layout architecture (Single/Spread), reading direction, image fit modes, and real-time upscaling algorithms through the settings panel.
 
 ### 4. Bookmarks
 Save your current position by clicking **"+ ADD"** in the Bookmarks panel. Each bookmark captures the exact file index and layout preferences, allowing for instantaneous session restoration.
