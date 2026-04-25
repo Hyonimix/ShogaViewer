@@ -1,3 +1,18 @@
+let MAX_GL_TEXTURE_SIZE = 4096;
+const _sharedGlCanvas = document.createElement('canvas');
+const _sharedGl = _sharedGlCanvas.getContext('webgl2', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true }) || _sharedGlCanvas.getContext('webgl', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true });
+
+try {
+    if (_sharedGl) MAX_GL_TEXTURE_SIZE = _sharedGl.getParameter(_sharedGl.MAX_TEXTURE_SIZE);
+} catch (e) {}
+
+function getDynamicMaxArea() {
+    const mem = navigator.deviceMemory || 8;
+    if (mem <= 4) return 4194304;
+    if (mem <= 8) return 8388608;
+    return 16777216;
+}
+
 let files =[];
 let currentFolders =[];
 let dirStack =[];
@@ -51,13 +66,6 @@ const urlCache = new Map();
 const DB_NAME = 'ShogaViewerDB';
 const STORE_HANDLES = 'FileSystemHandles';
 const STORE_BOOKMARKS = 'Bookmarks';
-
-let MAX_GL_TEXTURE_SIZE = 4096;
-try {
-    const _tmpCanvas = document.createElement('canvas');
-    const _tmpGl = _tmpCanvas.getContext('webgl2') || _tmpCanvas.getContext('webgl');
-    if (_tmpGl) MAX_GL_TEXTURE_SIZE = _tmpGl.getParameter(_tmpGl.MAX_TEXTURE_SIZE);
-} catch (e) {}
 
 let upscaleTasks = 0;
 function showUpscaleIndicator() {
@@ -172,10 +180,14 @@ async function clearDirHandles() {
 }
 
 async function verifyPermission(fileHandle) {
-    const options = { mode: 'read' };
-    if ((await fileHandle.queryPermission(options)) === 'granted') return true;
-    if ((await fileHandle.requestPermission(options)) === 'granted') return true;
-    return false;
+    try {
+        const options = { mode: 'read' };
+        if ((await fileHandle.queryPermission(options)) === 'granted') return true;
+        if ((await fileHandle.requestPermission(options)) === 'granted') return true;
+        return false;
+    } catch (e) {
+        return false;
+    }
 }
 
 const dom = {
@@ -420,7 +432,7 @@ const toggleBookmarkClearBtn = () => {
         dom.bookmarkClearBtn.style.opacity = '0';
         dom.bookmarkClearBtn.style.pointerEvents = 'none';
     }
-};
+}
 
 const applyBookmarkFilter = () => {
     let filterStyleEl = document.getElementById('bookmark-filter-style');
@@ -636,6 +648,9 @@ async function restoreBookmark(id) {
     urlCache.forEach(url => URL.revokeObjectURL(url));
     urlCache.clear();
 
+    upscaleCache.forEach(url => { if(url !== 'error' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
+    upscaleCache.clear();
+
     files = restoredFiles;
     currentTitle = bk.state.title;
     document.title = currentTitle;
@@ -755,8 +770,13 @@ dom.btnHome.addEventListener('click', () => {
     currentFolders =[];
     dirStack =[];
     currentIndex = 0;
+    
     urlCache.forEach(url => URL.revokeObjectURL(url));
     urlCache.clear();
+    
+    upscaleCache.forEach(url => { if(url !== 'error' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
+    upscaleCache.clear();
+    
     currentTitle = 'Shoga Viewer';
     document.title = currentTitle;
     dom.gridArea.replaceChildren();
@@ -922,6 +942,13 @@ bindGroup(['fsr-off', 'fsr-bilinear', 'fsr-anime4x', 'fsr-xbrz', 'fsr-fsr'], id 
 });
 
 function drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH) {
+    if (!gl || gl.isContextLost()) throw new Error('Context lost');
+    if (gl.canvas.width !== cw || gl.canvas.height !== ch) {
+        gl.canvas.width = cw;
+        gl.canvas.height = ch;
+    }
+    gl.viewport(0, 0, cw, ch);
+
     const compileShader = (type, source) => {
         const shader = gl.createShader(type);
         gl.shaderSource(shader, source);
@@ -936,8 +963,12 @@ function drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH) {
     gl.attachShader(program, fs);
     gl.linkProgram(program);
     gl.useProgram(program);
+    
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
 
     const positionBuffer = gl.createBuffer();
+    if (!positionBuffer || gl.getError() === gl.OUT_OF_MEMORY) throw new Error('OOM');
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
         -1, -1,  1, -1,  -1,  1,
@@ -949,6 +980,7 @@ function drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH) {
     gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
     const texture = gl.createTexture();
+    if (!texture || gl.getError() === gl.OUT_OF_MEMORY) throw new Error('OOM');
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -956,15 +988,16 @@ function drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    if (gl.getError() === gl.OUT_OF_MEMORY) throw new Error('OOM');
 
     gl.uniform1i(gl.getUniformLocation(program, 'u_image'), 0);
     gl.uniform2f(gl.getUniformLocation(program, 'u_texSize'), texW, texH);
 
-    return program;
+    return { program, texture, positionBuffer };
 }
 
-function renderFSR(img, canvas, cw, ch, texW, texH, sharpness = 1.8) {
-    const gl = canvas.getContext('webgl2', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true }) || canvas.getContext('webgl', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true });
+function renderFSR(img, canvas, cw, ch, texW, texH, sharpness = 2) {
+    const gl = _sharedGl;
     if (!gl) return;
 
     const vsSource = `
@@ -978,7 +1011,7 @@ function renderFSR(img, canvas, cw, ch, texW, texH, sharpness = 1.8) {
     `;
 
     const fsSource = `
-        precision mediump float;
+        precision highp float;
         varying vec2 v_texCoord;
         uniform sampler2D u_image;
         uniform vec2 u_texSize;
@@ -1039,14 +1072,22 @@ function renderFSR(img, canvas, cw, ch, texW, texH, sharpness = 1.8) {
         }
     `;
     
-    const program = drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH);
+    const { program, texture, positionBuffer } = drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH);
     gl.uniform1f(gl.getUniformLocation(program, 'u_sharpness'), sharpness);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
+    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) throw new Error('OOM');
+    
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.drawImage(gl.canvas, 0, 0);
+
+    gl.deleteTexture(texture);
+    gl.deleteBuffer(positionBuffer);
+    gl.deleteProgram(program);
 }
 
-function renderAnime4xLite(img, canvas, cw, ch, texW, texH) {
-    const gl = canvas.getContext('webgl2', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true }) || canvas.getContext('webgl', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true });
+function renderAntiJaggies(img, canvas, cw, ch, texW, texH) {
+    const gl = _sharedGl;
     if (!gl) return;
 
     const vsSource = `
@@ -1060,7 +1101,102 @@ function renderAnime4xLite(img, canvas, cw, ch, texW, texH) {
     `;
 
     const fsSource = `
-        precision mediump float;
+        precision highp float;
+        varying vec2 v_texCoord;
+        uniform sampler2D u_image;
+        uniform vec2 u_texSize;
+
+        void main() {
+            vec2 d = 1.0 / u_texSize;
+            vec2 p = v_texCoord;
+            
+            vec3 c = texture2D(u_image, p).rgb;
+            vec3 n = texture2D(u_image, p + vec2(0.0, -d.y)).rgb;
+            vec3 s = texture2D(u_image, p + vec2(0.0, d.y)).rgb;
+            vec3 w = texture2D(u_image, p + vec2(-d.x, 0.0)).rgb;
+            vec3 e = texture2D(u_image, p + vec2(d.x, 0.0)).rgb;
+            
+            float lC = dot(c, vec3(0.299, 0.587, 0.114));
+            float lN = dot(n, vec3(0.299, 0.587, 0.114));
+            float lS = dot(s, vec3(0.299, 0.587, 0.114));
+            float lW = dot(w, vec3(0.299, 0.587, 0.114));
+            float lE = dot(e, vec3(0.299, 0.587, 0.114));
+            
+            float lMin = min(min(min(lC, lN), min(lS, lW)), lE);
+            float lMax = max(max(max(lC, lN), max(lS, lW)), lE);
+            float contrast = lMax - lMin;
+            
+            if (contrast < 0.12) {
+                gl_FragColor = vec4(c, 1.0);
+                return;
+            }
+            
+            float lNW = dot(texture2D(u_image, p + vec2(-d.x, -d.y)).rgb, vec3(0.299, 0.587, 0.114));
+            float lNE = dot(texture2D(u_image, p + vec2(d.x, -d.y)).rgb, vec3(0.299, 0.587, 0.114));
+            float lSW = dot(texture2D(u_image, p + vec2(-d.x, d.y)).rgb, vec3(0.299, 0.587, 0.114));
+            float lSE = dot(texture2D(u_image, p + vec2(d.x, d.y)).rgb, vec3(0.299, 0.587, 0.114));
+            
+            float dirX = -((lNW + lNE) - (lSW + lSE));
+            float dirY =  ((lNW + lSW) - (lNE + lSE));
+            
+            vec2 dir = vec2(dirX, dirY);
+            float dirReduce = max((lNW + lNE + lSW + lSE) * 0.25 * 0.125, 0.0078125);
+            float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+            
+            dir = min(vec2(8.0, 8.0), max(vec2(-8.0, -8.0), dir * rcpDirMin)) * d;
+            
+            vec2 edgeDir = normalize(dir + vec2(0.00001)) * d;
+            vec3 sampleA = texture2D(u_image, p + edgeDir).rgb;
+            vec3 sampleB = texture2D(u_image, p - edgeDir).rgb;
+            
+            vec3 morphColor = c;
+            float lA = dot(sampleA, vec3(0.299, 0.587, 0.114));
+            float lB = dot(sampleB, vec3(0.299, 0.587, 0.114));
+            
+            if (lA < lC && lB < lC) {
+                morphColor = mix(c, min(sampleA, sampleB), 0.6);
+            } else if (lA > lC && lB > lC) {
+                morphColor = mix(c, max(sampleA, sampleB), 0.6);
+            }
+            
+            vec3 res1 = (texture2D(u_image, p + dir * (1.0/3.0 - 0.5)).rgb + texture2D(u_image, p + dir * (2.0/3.0 - 0.5)).rgb) * 0.5;
+            vec3 res2 = res1 * 0.5 + (texture2D(u_image, p + dir * (0.0/3.0 - 0.5)).rgb + texture2D(u_image, p + dir * (3.0/3.0 - 0.5)).rgb) * 0.25;
+            
+            float lRes2 = dot(res2, vec3(0.299, 0.587, 0.114));
+            vec3 fxaaColor = (lRes2 < lMin || lRes2 > lMax) ? res1 : res2;
+            
+            gl_FragColor = vec4(mix(morphColor, fxaaColor, 0.75), 1.0);
+        }
+    `;
+    const { program, texture, positionBuffer } = drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.finish();
+    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) throw new Error('OOM');
+    
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.drawImage(gl.canvas, 0, 0);
+
+    gl.deleteTexture(texture);
+    gl.deleteBuffer(positionBuffer);
+    gl.deleteProgram(program);
+}
+
+function renderAnime4xLite(img, canvas, cw, ch, texW, texH) {
+    const gl = _sharedGl;
+    if (!gl) return;
+
+    const vsSource = `
+        attribute vec2 a_position;
+        varying vec2 v_texCoord;
+        void main() {
+            gl_Position = vec4(a_position, 0.0, 1.0);
+            v_texCoord = a_position * 0.5 + 0.5;
+            v_texCoord.y = 1.0 - v_texCoord.y;
+        }
+    `;
+
+    const fsSource = `
+        precision highp float;
         varying vec2 v_texCoord;
         uniform sampler2D u_image;
         uniform vec2 u_texSize;
@@ -1085,13 +1221,21 @@ function renderAnime4xLite(img, canvas, cw, ch, texW, texH) {
             gl_FragColor = vec4(sharpened, 1.0);
         }
     `;
-    drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH);
+    const { program, texture, positionBuffer } = drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
+    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) throw new Error('OOM');
+    
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.drawImage(gl.canvas, 0, 0);
+
+    gl.deleteTexture(texture);
+    gl.deleteBuffer(positionBuffer);
+    gl.deleteProgram(program);
 }
 
 function renderXBRZLite(img, canvas, cw, ch, texW, texH) {
-    const gl = canvas.getContext('webgl2', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true }) || canvas.getContext('webgl', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true });
+    const gl = _sharedGl;
     if (!gl) return;
 
     const vsSource = `
@@ -1105,7 +1249,7 @@ function renderXBRZLite(img, canvas, cw, ch, texW, texH) {
     `;
 
     const fsSource = `
-        precision mediump float;
+        precision highp float;
         varying vec2 v_texCoord;
         uniform sampler2D u_image;
         uniform vec2 u_texSize;
@@ -1141,9 +1285,74 @@ function renderXBRZLite(img, canvas, cw, ch, texW, texH) {
             gl_FragColor = vec4(outColor, 1.0);
         }
     `;
-    drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH);
+    const { program, texture, positionBuffer } = drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
+    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) throw new Error('OOM');
+    
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.drawImage(gl.canvas, 0, 0);
+
+    gl.deleteTexture(texture);
+    gl.deleteBuffer(positionBuffer);
+    gl.deleteProgram(program);
+}
+
+async function performUpscale(srcImg, actualMode, fsrRatio, nw, nh, upscaleW, upscaleH) {
+    const finalCanvas = document.createElement('canvas');
+    finalCanvas.width = upscaleW;
+    finalCanvas.height = upscaleH;
+    const finalCtx = finalCanvas.getContext('2d', { alpha: false });
+
+    const TILE_SIZE = 1024;
+    const PADDING = 4;
+
+    for (let y = 0; y < nh; y += TILE_SIZE) {
+        for (let x = 0; x < nw; x += TILE_SIZE) {
+            const srcX = Math.max(0, x - PADDING);
+            const srcY = Math.max(0, y - PADDING);
+            const srcW = Math.min(nw - srcX, TILE_SIZE + (x - srcX) + PADDING);
+            const srcH = Math.min(nh - srcY, TILE_SIZE + (y - srcY) + PADDING);
+
+            const chunkCanvas = document.createElement('canvas');
+            chunkCanvas.width = srcW;
+            chunkCanvas.height = srcH;
+            const chunkCtx = chunkCanvas.getContext('2d', { alpha: false });
+            chunkCtx.drawImage(srcImg, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
+
+            const upChunkW = Math.ceil(srcW * fsrRatio);
+            const upChunkH = Math.ceil(srcH * fsrRatio);
+            const upChunkCanvas = document.createElement('canvas');
+            upChunkCanvas.width = upChunkW;
+            upChunkCanvas.height = upChunkH;
+
+            if (actualMode === 'FSR') {
+                const intCanvas = document.createElement('canvas');
+                intCanvas.width = upChunkW;
+                intCanvas.height = upChunkH;
+                renderFSR(chunkCanvas, intCanvas, upChunkW, upChunkH, srcW, srcH, 0.2);
+                renderAntiJaggies(intCanvas, upChunkCanvas, upChunkW, upChunkH, upChunkW, upChunkH);
+            } else if (actualMode === 'ANIME4X') {
+                renderAnime4xLite(chunkCanvas, upChunkCanvas, upChunkW, upChunkH, srcW, srcH);
+            } else if (actualMode === 'XBRZ') {
+                renderXBRZLite(chunkCanvas, upChunkCanvas, upChunkW, upChunkH, srcW, srcH);
+            }
+
+            const outX = (x - srcX) * fsrRatio;
+            const outY = (y - srcY) * fsrRatio;
+            const outW = Math.min(TILE_SIZE, nw - x) * fsrRatio;
+            const outH = Math.min(TILE_SIZE, nh - y) * fsrRatio;
+
+            finalCtx.drawImage(
+                upChunkCanvas,
+                outX, outY, outW, outH,
+                x * fsrRatio, y * fsrRatio, outW, outH
+            );
+
+            await new Promise(r => setTimeout(r, 0));
+        }
+    }
+    return finalCanvas;
 }
 
 function processNextPreload() {
@@ -1161,6 +1370,7 @@ function processNextPreload() {
     let actualMode = upscaleMode;
     let fsrRatio = (actualMode !== 'BILINEAR' && actualMode !== 'OFF') ? 2.0 : 1;
     let MAX_DIM = MAX_GL_TEXTURE_SIZE;
+    let MAX_AREA = getDynamicMaxArea();
 
     for (let i = 1; i <= MAX_PRELOAD; i++) {
         let rightIdx = currentIndex + i;
@@ -1197,7 +1407,7 @@ function processNextPreload() {
 
     const srcImg = new Image();
     srcImg.crossOrigin = "anonymous";
-    srcImg.onload = () => {
+    srcImg.onload = async () => {
         if (isPanning || isDragging || dom.body.classList.contains('animating') || upscaleTasks > 0) {
             preloadQueueTimer = setTimeout(processNextPreload, 200);
             return;
@@ -1209,7 +1419,10 @@ function processNextPreload() {
             return;
         }
 
-        if (nw * fsrRatio > MAX_DIM || nh * fsrRatio > MAX_DIM) {
+        const upscaleW = Math.ceil(nw * fsrRatio);
+        const upscaleH = Math.ceil(nh * fsrRatio);
+
+        if (upscaleW > 16384 || upscaleH > 16384) {
             upscaleCache.set(cacheKey, origUrl);
             if (viewMode === 'VIEWER') {
                 const domImgs = dom.viewerSlider.querySelectorAll(`img[data-file-index="${idx}"]:not(.crossfade-clone)`);
@@ -1223,46 +1436,78 @@ function processNextPreload() {
             return;
         }
 
-        const upscaleW = Math.ceil(nw * fsrRatio);
-        const upscaleH = Math.ceil(nh * fsrRatio);
-
-        let sourceForWebGL = srcImg;
-        
-        const finalCanvas = document.createElement('canvas');
-        finalCanvas.width = upscaleW;
-        finalCanvas.height = upscaleH;
-        
-        if (actualMode === 'FSR') {
-            renderFSR(sourceForWebGL, finalCanvas, upscaleW, upscaleH, nw, nh, 1.8);
-        } else if (actualMode === 'ANIME4X') {
-            renderAnime4xLite(sourceForWebGL, finalCanvas, upscaleW, upscaleH, nw, nh);
-        } else if (actualMode === 'XBRZ') {
-            renderXBRZLite(sourceForWebGL, finalCanvas, upscaleW, upscaleH, nw, nh);
-        }
-        
-        const fileType = files[idx].type;
-        const mime = (fileType === 'image/png' || fileType === 'image/webp' || fileType === 'image/gif') ? 'image/png' : 'image/jpeg';
-        
-        finalCanvas.toBlob(blob => {
-            const newUrl = URL.createObjectURL(blob);
-            if (upscaleCache.size >= 64) {
-                const firstKey = upscaleCache.keys().next().value;
-                URL.revokeObjectURL(upscaleCache.get(firstKey));
-                upscaleCache.delete(firstKey);
-            }
-            upscaleCache.set(cacheKey, newUrl);
+        try {
+            let finalCanvas;
+            let requiresTiling = (nw * fsrRatio > MAX_DIM || nh * fsrRatio > MAX_DIM || (nw * fsrRatio) * (nh * fsrRatio) > MAX_AREA);
             
+            if (requiresTiling) {
+                finalCanvas = await performUpscale(srcImg, actualMode, fsrRatio, nw, nh, upscaleW, upscaleH);
+            } else {
+                finalCanvas = document.createElement('canvas');
+                finalCanvas.width = upscaleW;
+                finalCanvas.height = upscaleH;
+                if (actualMode === 'FSR') {
+                    const intermediateCanvas = document.createElement('canvas');
+                    intermediateCanvas.width = upscaleW;
+                    intermediateCanvas.height = upscaleH;
+                    renderFSR(srcImg, intermediateCanvas, upscaleW, upscaleH, nw, nh, 0.2);
+                    renderAntiJaggies(intermediateCanvas, finalCanvas, upscaleW, upscaleH, upscaleW, upscaleH);
+                } else if (actualMode === 'ANIME4X') {
+                    renderAnime4xLite(srcImg, finalCanvas, upscaleW, upscaleH, nw, nh);
+                } else if (actualMode === 'XBRZ') {
+                    renderXBRZLite(srcImg, finalCanvas, upscaleW, upscaleH, nw, nh);
+                }
+            }
+            
+            const fileType = files[idx].type;
+            const mime = (fileType === 'image/png' || fileType === 'image/webp' || fileType === 'image/gif') ? 'image/png' : 'image/jpeg';
+            
+            finalCanvas.toBlob(blob => {
+                if (!blob) {
+                    upscaleCache.set(cacheKey, 'error');
+                    if (viewMode === 'VIEWER') {
+                        const domImgs = dom.viewerSlider.querySelectorAll(`img[data-file-index="${idx}"]:not(.crossfade-clone)`);
+                        domImgs.forEach(domImg => {
+                            if (domImg.dataset.fsrAppliedTier !== 'NATIVE_BILINEAR') {
+                                executeCrossfadeSwap(domImg, origUrl, 'NATIVE_BILINEAR');
+                            }
+                        });
+                    }
+                    preloadQueueTimer = setTimeout(processNextPreload, 50);
+                    return;
+                }
+                const newUrl = URL.createObjectURL(blob);
+                if (upscaleCache.size >= 64) {
+                    const firstKey = upscaleCache.keys().next().value;
+                    URL.revokeObjectURL(upscaleCache.get(firstKey));
+                    upscaleCache.delete(firstKey);
+                }
+                upscaleCache.set(cacheKey, newUrl);
+                
+                if (viewMode === 'VIEWER') {
+                    const domImgs = dom.viewerSlider.querySelectorAll(`img[data-file-index="${idx}"]:not(.crossfade-clone)`);
+                    domImgs.forEach(domImg => {
+                        if (domImg.dataset.fsrAppliedTier !== cacheKey) {
+                            executeCrossfadeSwap(domImg, newUrl, cacheKey);
+                        }
+                    });
+                }
+                
+                preloadQueueTimer = setTimeout(processNextPreload, 50);
+            }, mime, 0.92);
+        } catch (e) {
+            upscaleCache.set(cacheKey, 'error');
             if (viewMode === 'VIEWER') {
                 const domImgs = dom.viewerSlider.querySelectorAll(`img[data-file-index="${idx}"]:not(.crossfade-clone)`);
                 domImgs.forEach(domImg => {
-                    if (domImg.dataset.fsrAppliedTier !== cacheKey) {
-                        executeCrossfadeSwap(domImg, newUrl, cacheKey);
+                    if (domImg.dataset.fsrAppliedTier !== 'NATIVE_BILINEAR') {
+                        executeCrossfadeSwap(domImg, origUrl, 'NATIVE_BILINEAR');
                     }
                 });
             }
-            
             preloadQueueTimer = setTimeout(processNextPreload, 50);
-        }, mime, 0.92);
+            return;
+        }
     };
     srcImg.onerror = () => {
         upscaleCache.set(cacheKey, 'error'); 
@@ -1334,13 +1579,14 @@ function applyFSROverlays() {
         if (!nw || !nh) return;
 
         let MAX_DIM = MAX_GL_TEXTURE_SIZE;
+        let MAX_AREA = getDynamicMaxArea();
         let actualMode = upscaleMode;
         let fsrRatio = 1;
         let isTooLarge = false;
         
         if (upscaleMode !== 'BILINEAR') {
             fsrRatio = 2.0;
-            if (nw * 2.0 > MAX_DIM || nh * 2.0 > MAX_DIM) {
+            if (nw * 2.0 > 16384 || nh * 2.0 > 16384) {
                 isTooLarge = true;
                 fsrDisabledDueToSize = true;
             }
@@ -1419,48 +1665,96 @@ function applyFSROverlays() {
             const srcImg = new Image();
             srcImg.crossOrigin = "anonymous";
             srcImg.onload = () => {
-                setTimeout(() => {
+                setTimeout(async () => {
                     if (isPanning || isDragging || dom.body.classList.contains('animating')) {
                         delete img.dataset.fsrProcessingKey;
                         hideUpscaleIndicator();
                         return;
                     }
                     
-                    let sourceForWebGL = srcImg;
-                    
-                    const finalCanvas = document.createElement('canvas');
-                    finalCanvas.width = upscaleW;
-                    finalCanvas.height = upscaleH;
-                    
-                    if (actualMode === 'FSR') {
-                        renderFSR(sourceForWebGL, finalCanvas, upscaleW, upscaleH, nw, nh, 1.8);
-                    } else if (actualMode === 'ANIME4X') {
-                        renderAnime4xLite(sourceForWebGL, finalCanvas, upscaleW, upscaleH, nw, nh);
-                    } else if (actualMode === 'XBRZ') {
-                        renderXBRZLite(sourceForWebGL, finalCanvas, upscaleW, upscaleH, nw, nh);
-                    }
-                    
-                    setTimeout(() => {
-                        if (isPanning || isDragging || dom.body.classList.contains('animating')) {
-                            delete img.dataset.fsrProcessingKey;
-                            hideUpscaleIndicator();
-                            return;
-                        }
-                        const fileType = img.dataset.fileIndex ? files[parseInt(img.dataset.fileIndex)].type : 'image/jpeg';
-                        const mime = (fileType === 'image/png' || fileType === 'image/webp' || fileType === 'image/gif') ? 'image/png' : 'image/jpeg';
+                    try {
+                        let finalCanvas;
+                        let requiresTiling = (nw * fsrRatio > MAX_DIM || nh * fsrRatio > MAX_DIM || (nw * fsrRatio) * (nh * fsrRatio) > MAX_AREA);
                         
-                        finalCanvas.toBlob(blob => {
-                            const newUrl = URL.createObjectURL(blob);
-                            if (upscaleCache.size >= 64) {
-                                const firstKey = upscaleCache.keys().next().value;
-                                URL.revokeObjectURL(upscaleCache.get(firstKey));
-                                upscaleCache.delete(firstKey);
+                        if (requiresTiling) {
+                            finalCanvas = await performUpscale(srcImg, actualMode, fsrRatio, nw, nh, upscaleW, upscaleH);
+                        } else {
+                            finalCanvas = document.createElement('canvas');
+                            finalCanvas.width = upscaleW;
+                            finalCanvas.height = upscaleH;
+                            if (actualMode === 'FSR') {
+                                const intermediateCanvas = document.createElement('canvas');
+                                intermediateCanvas.width = upscaleW;
+                                intermediateCanvas.height = upscaleH;
+                                renderFSR(srcImg, intermediateCanvas, upscaleW, upscaleH, nw, nh, 0.2);
+                                renderAntiJaggies(intermediateCanvas, finalCanvas, upscaleW, upscaleH, upscaleW, upscaleH);
+                            } else if (actualMode === 'ANIME4X') {
+                                renderAnime4xLite(srcImg, finalCanvas, upscaleW, upscaleH, nw, nh);
+                            } else if (actualMode === 'XBRZ') {
+                                renderXBRZLite(srcImg, finalCanvas, upscaleW, upscaleH, nw, nh);
                             }
-                            upscaleCache.set(cacheKey, newUrl);
-                            applyUpscaledImage(newUrl);
-                            hideUpscaleIndicator();
-                        }, mime, 0.92);
-                    }, 0);
+                        }
+                        
+                        setTimeout(() => {
+                            if (isPanning || isDragging || dom.body.classList.contains('animating')) {
+                                delete img.dataset.fsrProcessingKey;
+                                hideUpscaleIndicator();
+                                return;
+                            }
+                            const fileType = img.dataset.fileIndex ? files[parseInt(img.dataset.fileIndex)].type : 'image/jpeg';
+                            const mime = (fileType === 'image/png' || fileType === 'image/webp' || fileType === 'image/gif') ? 'image/png' : 'image/jpeg';
+                            
+                            finalCanvas.toBlob(blob => {
+                                if (!blob) {
+                                    delete img.dataset.fsrProcessingKey;
+                                    if (img.dataset.fsrAppliedTier !== 'NATIVE_BILINEAR') {
+                                        const doSwap = () => {
+                                            if (!dom.viewerContent.contains(img)) return;
+                                            executeCrossfadeSwap(img, img.dataset.originalUrl, 'NATIVE_BILINEAR');
+                                        };
+                                        if (isPanning || isDragging || dom.body.classList.contains('animating')) {
+                                            img.pendingFsrSwap = doSwap;
+                                        } else {
+                                            doSwap();
+                                        }
+                                    }
+                                    hideUpscaleIndicator();
+                                    const warningId = actualMode === 'FSR' ? 'fsr-warning' : (actualMode === 'ANIME4X' ? 'anime4x-warning' : 'xbrz-warning');
+                                    const warningEl = document.getElementById(warningId);
+                                    if (warningEl) warningEl.style.display = 'flex';
+                                    return;
+                                }
+                                const newUrl = URL.createObjectURL(blob);
+                                if (upscaleCache.size >= 64) {
+                                    const firstKey = upscaleCache.keys().next().value;
+                                    URL.revokeObjectURL(upscaleCache.get(firstKey));
+                                    upscaleCache.delete(firstKey);
+                                }
+                                upscaleCache.set(cacheKey, newUrl);
+                                applyUpscaledImage(newUrl);
+                                hideUpscaleIndicator();
+                            }, mime, 0.92);
+                        }, 0);
+                    } catch (e) {
+                        delete img.dataset.fsrProcessingKey;
+                        if (img.dataset.fsrAppliedTier !== 'NATIVE_BILINEAR') {
+                            const doSwap = () => {
+                                if (!dom.viewerContent.contains(img)) return;
+                                executeCrossfadeSwap(img, img.dataset.originalUrl, 'NATIVE_BILINEAR');
+                            };
+                            if (isPanning || isDragging || dom.body.classList.contains('animating')) {
+                                img.pendingFsrSwap = doSwap;
+                            } else {
+                                doSwap();
+                            }
+                        }
+                        hideUpscaleIndicator();
+                        
+                        const warningId = actualMode === 'FSR' ? 'fsr-warning' : (actualMode === 'ANIME4X' ? 'anime4x-warning' : 'xbrz-warning');
+                        const warningEl = document.getElementById(warningId);
+                        if (warningEl) warningEl.style.display = 'flex';
+                        return;
+                    }
                 }, 0);
             };
             srcImg.onerror = () => {
@@ -1494,6 +1788,9 @@ function applyFSROverlays() {
 function processFileList(fileList, title) {
     urlCache.forEach(url => URL.revokeObjectURL(url));
     urlCache.clear();
+    
+    upscaleCache.forEach(url => { if(url !== 'error' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
+    upscaleCache.clear();
 
     files = fileList.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
     
@@ -2116,7 +2413,7 @@ function resetTransform(smooth = true) {
 }
 
 function applyContentTransform() {
-    dom.viewerContent.style.transform = `translate(${panX}px, ${panY}px) scale(${currentZoom})`;
+    dom.viewerContent.style.transform = `translate(${Math.round(panX)}px, ${Math.round(panY)}px) scale(${currentZoom})`;
     clearTimeout(fsrDebounceTimer);
     fsrDebounceTimer = setTimeout(applyFSROverlays, 300);
 }
