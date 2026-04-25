@@ -1,39 +1,31 @@
 # Shoga Viewer
-Shoga Viewer is a high-performance image and manga viewer specifically optimized for **ChromeOS-powered tablets and laptops**. It provides a fluid, distraction-free environment, leveraging modern browser capabilities to deliver a local-first experience with uncompromising speed on ChromeOS devices.
+Shoga Viewer is an image and manga viewer optimized for ChromeOS devices. It utilizes modern web APIs to provide local-first directory access and hardware-accelerated rendering. Please note that this application is not designed for environments other than ChromeOS, and its normal operation in such environments is not guaranteed.
 
 ## Key Attributes
-* **Ultimate Manga Reader**: Seamlessly switch between Single and Spread (dual-page) modes. With native support for Right-to-Left (RTL) reading directions and multiple viewport fit options, it offers the perfect environment for reading manga and comics.
-* **Real-Time Upscaling**: Breathe new life into low-resolution images. Features multiple built-in, real-time upscaling algorithms including AMD FSR (Photo/Realism), Anime4K (Illustration/Anime), xBRZ (Pixel Art), and Bilinear smoothing.
-* **FileSystem Integration**: Direct access to local directories via the FileSystem Access API, ensuring privacy and eliminating the need for file uploads.
-* **Hardware Acceleration**: Efficient thumbnail generation and hardware-accelerated image decoding for near-zero latency, even with thousands of assets.
-* **Fluid Interaction**: Precision-tuned touch and mouse gestures for zooming, panning, and navigation, optimized for ChromeOS tablet and laptop workflows.
-* **Session Persistence**: Automatic tracking of recent sessions and specific reading points (bookmarks) using IndexedDB.
+* **Manga Viewing Modes**: Supports Single and Spread (dual-page) layouts. Includes native Right-to-Left (RTL) reading direction and various viewport fit options (Contain, Auto, Width, Height, Original).
+* **Real-Time Upscaling**: Provides WebGL-accelerated image scaling algorithms.
+    1. **Bilinear**: Standard hardware-accelerated smoothing.
+    2. **Anime4K**: Optimized for illustrations and animation.
+    3. **xBRZ**: Specialized for retro games and edge preservation.
+    4. **FSR Shoga+ (AMD FidelityFX Super Resolution with Anti-Jaggies)**: High-fidelity scaling with integrated anti-aliasing.
+    * Note: Dynamic scaling (up to x4) is applied based on device memory (16GB+ RAM). Background preloading is supported via a queue system.
+* **FileSystem Integration**: Accesses local directories directly through the FileSystem Access API. Supports nested subfolder navigation, directory-level sorting (Name Asc/Desc), and folder name filtering.
+* **Hardware Acceleration**: Implements asynchronous image decoding and high-performance thumbnail generation using ImageBitmap.
+* **Interaction Model**: Optimized for touch and mouse input. Supports pinch-to-zoom, panning, double-tap reset, and edge-swipe gestures for navigation and UI toggling.
+* **Session Management**: Tracks recent sessions and reading progress using IndexedDB. Includes a searchable bookmark system that restores directory stacks, file indices, and layout configurations.
 
 ## Usage Guide
-
-### 1. Data Input
-Click the folder icon in the top navigation bar and select **"SELECT DIRECTORY"**. Once folder access is granted, the engine will index all image assets within the directory and display them in the grid view.
-
-### 2. Navigation
-* **Browsing**: Use the grid view for a high-level overview. Tap or click any thumbnail to enter the viewer.
-* **Paging**: Swipe horizontally, use the keyboard arrow keys, or tap the outer 15% of the screen to move between images.
-* **Home**: The home icon resets the current library and returns to the initial landing screen.
-
-### 3. Display Control
-* **Zoom & Pan**: Use a mouse wheel or pinch gesture to zoom. Click/touch and drag to move through enlarged images. Double-tap to reset the view to its original scale.
-* **Interface Visibility**: Tap the center of the screen to toggle the visibility of the navigation and status bars.
-* **Settings & Upscaling**: Adjust the layout architecture (Single/Spread), reading direction, image fit modes, and real-time upscaling algorithms through the settings panel.
-
-### 4. Bookmarks
-Save your current position by clicking **"+ ADD"** in the Bookmarks panel. Each bookmark captures the exact file index and layout preferences, allowing for instantaneous session restoration.
+1. **Data Input**: Use "SELECT DIRECTORY" to grant folder access. The application indexes images within the selected path, including subfolders.
+2. **Navigation**: Use the grid view for overview or the viewer for reading. Supports horizontal swipes, arrow keys, and screen-edge taps for paging.
+3. **Display Control**: Zoom via mouse wheel or pinch gesture. Adjust layout, reading direction, and upscaling algorithms through the settings panel.
+4. **Bookmarks**: Save the current state using the "+ ADD" button. Access and filter saved bookmarks via the searchable bookmarks panel.
 
 ## System Requirements
-
-| Feature | Minimum | Recommended |
-|:---|:---|:---|
-| **Processor** | Snapdragon 7c / Intel Celeron N4020 | Snapdragon 7c Gen 2 / Intel Core i3 |
-| **Memory** | 4GB RAM | 8GB RAM |
-| **Display** | 1280 x 720 | 1920 x 1080 |
+| Feature | Minimum | Recommended | High-Performance (x4) |
+|:---|:---|:---|:---|
+| **Processor** | Snapdragon 7c / Celeron N4020 | Snapdragon 7c Gen 2 / Core i3 | Intel Core i5 / Equivalent |
+| **Memory** | 4GB RAM | 8GB RAM | 16GB+ RAM |
+| **Display** | 1280 x 720 | 1920 x 1080 | 2560 x 1440+ |
 
 ## License
-Copyright © 2026 D5 Kan. Distributed under the [MIT License](LICENSE).
+Copyright (c) 2026 D5 Kan. Distributed under the MIT License.

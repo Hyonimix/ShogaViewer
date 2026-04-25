@@ -1,6 +1,31 @@
 let MAX_GL_TEXTURE_SIZE = 4096;
-const _sharedGlCanvas = document.createElement('canvas');
-const _sharedGl = _sharedGlCanvas.getContext('webgl2', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true }) || _sharedGlCanvas.getContext('webgl', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true });
+let _sharedGlCanvas = document.createElement('canvas');
+let _sharedGl = _sharedGlCanvas.getContext('webgl2', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true }) || _sharedGlCanvas.getContext('webgl', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true });
+
+function getGL() {
+    if (!_sharedGl || _sharedGl.isContextLost()) {
+        console.warn('WebGL Context is lost or null. Recreating...');
+        _sharedGlCanvas = document.createElement('canvas');
+        _sharedGl = _sharedGlCanvas.getContext('webgl2', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true }) || _sharedGlCanvas.getContext('webgl', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true });
+        if (_sharedGl) {
+            try { MAX_GL_TEXTURE_SIZE = _sharedGl.getParameter(_sharedGl.MAX_TEXTURE_SIZE); } catch(e) { console.error('Failed to get MAX_TEXTURE_SIZE', e); }
+        } else {
+            console.error('WebGL context creation completely failed.');
+        }
+    }
+    return _sharedGl;
+}
+
+const escapeHtml = (str) => {
+    if (!str) return '';
+    return str.replace(/[&<>"']/g, (m) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[m]));
+};
 
 try {
     if (_sharedGl) MAX_GL_TEXTURE_SIZE = _sharedGl.getParameter(_sharedGl.MAX_TEXTURE_SIZE);
@@ -19,7 +44,7 @@ let dirStack =[];
 let currentIndex = 0;
 let layoutMode = 'SINGLE';
 let readDir = 'LTR';
-let fitMode = 'CONTAIN';
+let fitMode = 'AUTO';
 let firstPageCover = false;
 let viewMode = 'IDLE'; 
 
@@ -31,7 +56,12 @@ let currentTitle = 'Shoga Viewer';
 let bookmarks =[];
 let isGridRendered = false;
 let recentsEnabled = localStorage.getItem('shoga-recents-enabled') !== 'false';
-let upscaleMode = localStorage.getItem('shoga-upscale-mode') || 'OFF';
+
+let upscaleMode = localStorage.getItem('shoga-upscale-mode');
+if (!upscaleMode) upscaleMode = 'BILINEAR';
+
+let is4xEnabled = localStorage.getItem('shoga-4x-enabled') !== 'false';
+
 const upscaleCache = new Map();
 
 let preloadQueueTimer = null;
@@ -41,6 +71,9 @@ let isSingleFileMode = false;
 let pendingBookmarkRestoreId = null;
 
 let prevIndex = -1, nextIndex = -1;
+
+const isHighMemMode = (navigator.deviceMemory || 8) >= 16;
+const maxZoomLimit = 25;
 
 let currentZoom = 1;
 let panX = 0, panY = 0;
@@ -59,7 +92,7 @@ let singleTapTimeout = null;
 let navTimeout = null;
 let pendingIndex = null;
 
-let fsrDebounceTimer = null;
+let upscaleDebounceTimer = null;
 
 const urlCache = new Map();
 
@@ -71,12 +104,21 @@ let upscaleTasks = 0;
 function showUpscaleIndicator() {
     upscaleTasks++;
     document.getElementById('upscale-indicator').style.display = 'flex';
+    document.getElementById('btn-save').disabled = true;
 }
 function hideUpscaleIndicator() {
     upscaleTasks = Math.max(0, upscaleTasks - 1);
     if (upscaleTasks === 0) {
         document.getElementById('upscale-indicator').style.display = 'none';
+        document.getElementById('btn-save').disabled = false;
     }
+}
+
+function showLoading() {
+    document.getElementById('loading-overlay').style.display = 'flex';
+}
+function hideLoading() {
+    document.getElementById('loading-overlay').style.display = 'none';
 }
 
 function initDB() {
@@ -195,6 +237,7 @@ const dom = {
     topBar: document.getElementById('top-bar'),
     btnOpenMain: document.getElementById('btn-open-main'),
     openDropdown: document.getElementById('open-dropdown'),
+    btnSave: document.getElementById('btn-save'),
     btnHome: document.getElementById('btn-home'),
     btnOpenFiles: document.getElementById('btn-open-files'),
     btnOpenDir: document.getElementById('btn-open-dir'),
@@ -235,6 +278,8 @@ const dom = {
     }
 };
 
+dom.btnSave.style.display = 'none';
+
 const __swipeStyle = document.createElement('style');
 __swipeStyle.textContent = `
     html, body { overscroll-behavior-x: none !important; }
@@ -243,11 +288,13 @@ __swipeStyle.textContent = `
 document.head.appendChild(__swipeStyle);
 
 function switchToIdle() {
+    pointers =[]; isPanning = false; isDragging = false; isGridSwiping = false; isGridPulling = false; initialDistance = 0;
     viewMode = 'IDLE';
     dom.gridArea.style.display = 'none';
     dom.viewerArea.style.display = 'none';
     dom.btnGrid.style.display = 'none';
     dom.btnInfo.style.display = 'none';
+    dom.btnSave.style.display = 'none';
     dom.idleScreen.style.display = 'flex';
     dom.body.classList.remove('ui-hidden');
 }
@@ -261,17 +308,56 @@ function switchToIdle() {
         dom.btnToggleRecents.classList.toggle('off', !recentsEnabled);
         renderRecents();
     }
-    document.getElementById('fsr-off').classList.remove('active');
+
+    document.getElementById('upscale-off').classList.remove('active');
     if (upscaleMode === 'BILINEAR') {
-        document.getElementById('fsr-bilinear').classList.add('active');
+        document.getElementById('upscale-bilinear').classList.add('active');
+    } else if (upscaleMode === 'ADPTV_SHOGA') {
+        document.getElementById('upscale-adptv').classList.add('active');
     } else if (upscaleMode === 'FSR') {
-        document.getElementById('fsr-fsr').classList.add('active');
+        document.getElementById('upscale-fsr').classList.add('active');
     } else if (upscaleMode === 'XBRZ') {
-        document.getElementById('fsr-xbrz').classList.add('active');
+        document.getElementById('upscale-xbrz').classList.add('active');
     } else if (upscaleMode === 'ANIME4X') {
-        document.getElementById('fsr-anime4x').classList.add('active');
+        document.getElementById('upscale-anime4x').classList.add('active');
     } else {
-        document.getElementById('fsr-off').classList.add('active');
+        document.getElementById('upscale-off').classList.add('active');
+    }
+
+    const x4Tag = document.getElementById('upscale-x4-tag');
+    
+    if (isHighMemMode) {
+        x4Tag.style.display = 'inline';
+        x4Tag.style.color = is4xEnabled ? '#3a82f6' : '#666666';
+        
+        x4Tag.addEventListener('click', () => {
+            is4xEnabled = !is4xEnabled;
+            localStorage.setItem('shoga-4x-enabled', is4xEnabled);
+            x4Tag.style.color = is4xEnabled ? '#3a82f6' : '#666666';
+            
+            if (upscaleMode !== 'OFF') {
+                for (let[k, v] of upscaleCache.entries()) {
+                    if (v === 'error') upscaleCache.delete(k);
+                }
+                clearTimeout(upscaleDebounceTimer);
+                upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 300);
+                startPreloadQueue();
+            }
+        });
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const imgUrl = urlParams.get('imgUrl');
+    if (imgUrl) {
+        showLoading();
+        try {
+            const resp = await fetch(imgUrl);
+            const blob = await resp.blob();
+            const fileName = imgUrl.split('/').pop().split('?')[0] || 'remote-image';
+            const file = new File([blob], fileName, { type: blob.type });
+            processFileList([file], 'REMOTE IMAGE');
+        } catch (e) {}
+        finally { hideLoading(); }
     }
 })();
 
@@ -496,7 +582,7 @@ function renderBookmarks() {
                     <svg viewBox="0 0 24 24" width="14" height="14" stroke="#ef4444" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
-            <div class="bookmark-title">${bk.title}</div>
+            <div class="bookmark-title">${escapeHtml(bk.title)}</div>
             <div class="bookmark-meta">Page ${bk.state.currentIndex + 1} / ${bk.state.fileNames.length} • ${bk.state.layoutMode}</div>
         `;
         el.addEventListener('click', async (e) => {
@@ -575,8 +661,10 @@ async function restoreBookmark(id) {
                     const folderList =[];
                     for await (const entry of target.handle.values()) {
                         if (entry.kind === 'file') {
-                            const file = await entry.getFile();
-                            if (file.type.startsWith('image/')) fileList.push(file);
+                            try {
+                                const file = await entry.getFile();
+                                if (file.type.startsWith('image/')) fileList.push(file);
+                            } catch (err) {}
                         } else if (entry.kind === 'directory') {
                             folderList.push(entry);
                         }
@@ -605,8 +693,10 @@ async function restoreBookmark(id) {
                     const folderList =[];
                     for await (const entry of matchedItem.handle.values()) {
                         if (entry.kind === 'file') {
-                            const file = await entry.getFile();
-                            if (file.type.startsWith('image/')) fileList.push(file);
+                            try {
+                                const file = await entry.getFile();
+                                if (file.type.startsWith('image/')) fileList.push(file);
+                            } catch (err) {}
                         } else if (entry.kind === 'directory') {
                             folderList.push(entry);
                         }
@@ -648,7 +738,7 @@ async function restoreBookmark(id) {
     urlCache.forEach(url => URL.revokeObjectURL(url));
     urlCache.clear();
 
-    upscaleCache.forEach(url => { if(url !== 'error' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
+    upscaleCache.forEach(url => { if(url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
     upscaleCache.clear();
 
     files = restoredFiles;
@@ -679,7 +769,7 @@ async function restoreBookmark(id) {
     document.querySelectorAll('#dir-ltr, #dir-rtl').forEach(b => b.classList.remove('active'));
     document.getElementById(readDir === 'LTR' ? 'dir-ltr' : 'dir-rtl').classList.add('active');
 
-    document.querySelectorAll('#fit-contain, #fit-auto, #fit-width, #fit-height, #fit-original').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#fit-auto, #fit-contain, #fit-width, #fit-height, #fit-original').forEach(b => b.classList.remove('active'));
     document.getElementById('fit-' + fitMode.toLowerCase()).classList.add('active');
 
     closeAllPanels();
@@ -764,9 +854,70 @@ dom.btnOpenMain.addEventListener('click', (e) => {
     if (!isActive) dom.openDropdown.classList.add('active'); 
 });
 
+async function saveCurrentImage() {
+    if (files.length === 0 || viewMode !== 'VIEWER') return;
+    
+    const indices = getSpreadGroup(currentIndex);
+    const imgs = Array.from(dom.viewerContent.querySelectorAll('img:not(.crossfade-clone)'));
+    
+    for (let i = 0; i < indices.length; i++) {
+        const idx = indices[i];
+        const originalFile = files[idx];
+        let blobToSave = originalFile;
+        let fileName = originalFile.name;
+        let baseName = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
+        let ext = fileName.includes('.') ? fileName.substring(fileName.lastIndexOf('.')) : '';
+        
+        const imgEl = imgs.find(img => parseInt(img.dataset.fileIndex) === idx);
+        
+        if (imgEl && imgEl.dataset.upscaleAppliedTier && upscaleCache.has(imgEl.dataset.upscaleAppliedTier)) {
+            const cacheKey = imgEl.dataset.upscaleAppliedTier;
+            const cachedUrl = upscaleCache.get(cacheKey);
+            
+            if (cachedUrl !== 'error' && cachedUrl !== 'skipped' && cachedUrl !== 'processing' && cachedUrl.startsWith('blob:')) {
+                try {
+                    const resp = await fetch(cachedUrl);
+                    blobToSave = await resp.blob();
+                    ext = (blobToSave.type === 'image/png') ? '.png' : '.jpg';
+                    
+                    let modeName = '';
+                    if (cacheKey.includes('_FSR_')) modeName = 'FSR_ShogaPlus';
+                    else if (cacheKey.includes('_ANIME4X_')) modeName = 'Anime4x';
+                    else if (cacheKey.includes('_XBRZ_')) modeName = 'xBRZ';
+                    else if (cacheKey.includes('_ADPTV_SHOGA_')) modeName = 'Adptv_ShogaPlus';
+                    
+                    let ratioMatch = cacheKey.match(/_([\d\.]+)$/);
+                    let ratioSuffix = ratioMatch ? `_${ratioMatch[1]}x` : '';
+                    
+                    if (modeName) {
+                        fileName = `${baseName}_${modeName}${ratioSuffix}${ext}`;
+                    }
+                } catch (e) {}
+            }
+        }
+        
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blobToSave);
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        
+        if (indices.length > 1) {
+            await new Promise(r => setTimeout(r, 500));
+        }
+    }
+}
+
+dom.btnSave.addEventListener('click', (e) => {
+    e.stopPropagation();
+    saveCurrentImage();
+});
+
 dom.btnHome.addEventListener('click', () => {
     dom.openDropdown.classList.remove('active');
-    files =[];
+    files = [];
     currentFolders =[];
     dirStack =[];
     currentIndex = 0;
@@ -774,7 +925,7 @@ dom.btnHome.addEventListener('click', () => {
     urlCache.forEach(url => URL.revokeObjectURL(url));
     urlCache.clear();
     
-    upscaleCache.forEach(url => { if(url !== 'error' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
+    upscaleCache.forEach(url => { if(url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
     upscaleCache.clear();
     
     currentTitle = 'Shoga Viewer';
@@ -795,17 +946,24 @@ dom.btnOpenFiles.addEventListener('click', () => {
 });
 
 async function processDirectoryHandle(handle, titleOverride = null) {
-    const fileList =[];
-    currentFolders =[];
-    for await (const entry of handle.values()) {
-        if (entry.kind === 'file') {
-            const file = await entry.getFile();
-            if (file.type.startsWith('image/')) fileList.push(file);
-        } else if (entry.kind === 'directory') {
-            currentFolders.push(entry);
+    showLoading();
+    try {
+        const fileList = [];
+        currentFolders =[];
+        for await (const entry of handle.values()) {
+            if (entry.kind === 'file') {
+                try {
+                    const file = await entry.getFile();
+                    if (file.type.startsWith('image/')) fileList.push(file);
+                } catch (err) {}
+            } else if (entry.kind === 'directory') {
+                currentFolders.push(entry);
+            }
         }
+        processFileList(fileList, titleOverride || handle.name);
+    } finally {
+        hideLoading();
     }
-    processFileList(fileList, titleOverride || handle.name);
 }
 
 async function handleDirectoryPicker() {
@@ -831,12 +989,14 @@ dom.btnOpenDir.addEventListener('click', () => {
 
 const handleFileInput = (e) => {
     if (e.target.files.length > 0) {
+        showLoading();
         const filesArr = Array.from(e.target.files);
         let title = 'Shoga Viewer';
         if (filesArr[0].webkitRelativePath) {
             title = filesArr[0].webkitRelativePath.split('/')[0] || title;
         }
         processFileList(filesArr.filter(f => f.type.startsWith('image/')), title);
+        hideLoading();
     }
     e.target.value = ''; 
 };
@@ -908,32 +1068,36 @@ bindGroup(['mode-single', 'mode-spread'], id => {
 });
 bindGroup(['cover-inline', 'cover-isolated'], id => { firstPageCover = id === 'cover-isolated'; renderViewer(); });
 bindGroup(['dir-ltr', 'dir-rtl'], id => { readDir = id === 'dir-ltr' ? 'LTR' : 'RTL'; renderViewer(); });
-bindGroup(['fit-contain', 'fit-auto', 'fit-width', 'fit-height', 'fit-original'], id => { fitMode = id.replace('fit-', '').toUpperCase(); renderViewer(); });
-bindGroup(['fsr-off', 'fsr-bilinear', 'fsr-anime4x', 'fsr-xbrz', 'fsr-fsr'], id => { 
-    if (id === 'fsr-off') upscaleMode = 'OFF';
-    else if (id === 'fsr-bilinear') upscaleMode = 'BILINEAR';
-    else if (id === 'fsr-anime4x') upscaleMode = 'ANIME4X';
-    else if (id === 'fsr-xbrz') upscaleMode = 'XBRZ';
+bindGroup(['fit-auto', 'fit-contain', 'fit-width', 'fit-height', 'fit-original'], id => { fitMode = id.replace('fit-', '').toUpperCase(); renderViewer(); });
+bindGroup(['upscale-off', 'upscale-bilinear', 'upscale-adptv', 'upscale-anime4x', 'upscale-xbrz', 'upscale-fsr'], id => { 
+    if (id === 'upscale-off') upscaleMode = 'OFF';
+    else if (id === 'upscale-bilinear') upscaleMode = 'BILINEAR';
+    else if (id === 'upscale-adptv') upscaleMode = 'ADPTV_SHOGA';
+    else if (id === 'upscale-anime4x') upscaleMode = 'ANIME4X';
+    else if (id === 'upscale-xbrz') upscaleMode = 'XBRZ';
     else upscaleMode = 'FSR';
     
     localStorage.setItem('shoga-upscale-mode', upscaleMode);
     
     if (upscaleMode !== 'OFF') {
+        for (let[k, v] of upscaleCache.entries()) {
+            if (v === 'error') upscaleCache.delete(k);
+        }
         if (viewMode === 'VIEWER') {
             dom.viewerSlider.querySelectorAll('.view-slot img:not(.crossfade-clone)').forEach(img => {
-                if (!img.dataset.fsrAppliedTier) {
+                if (!img.dataset.upscaleAppliedTier) {
                     executeCrossfadeSwap(img, img.dataset.originalUrl, 'NATIVE_BILINEAR');
                 }
             });
         }
-        clearTimeout(fsrDebounceTimer);
-        fsrDebounceTimer = setTimeout(applyFSROverlays, 300);
+        clearTimeout(upscaleDebounceTimer);
+        upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 300);
         startPreloadQueue();
     } else {
         if (viewMode === 'VIEWER') {
             const imgs = dom.viewerSlider.querySelectorAll('img:not(.crossfade-clone)');
             imgs.forEach(img => {
-                if (img.dataset.fsrAppliedTier) {
+                if (img.dataset.upscaleAppliedTier) {
                     executeCrossfadeSwap(img, img.dataset.originalUrl, null);
                 }
             });
@@ -942,7 +1106,7 @@ bindGroup(['fsr-off', 'fsr-bilinear', 'fsr-anime4x', 'fsr-xbrz', 'fsr-fsr'], id 
 });
 
 function drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH) {
-    if (!gl || gl.isContextLost()) throw new Error('Context lost');
+    if (!gl || gl.isContextLost()) { console.error('Context lost in drawWebGL'); throw new Error('Context lost'); }
     if (gl.canvas.width !== cw || gl.canvas.height !== ch) {
         gl.canvas.width = cw;
         gl.canvas.height = ch;
@@ -968,7 +1132,7 @@ function drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH) {
     gl.deleteShader(fs);
 
     const positionBuffer = gl.createBuffer();
-    if (!positionBuffer || gl.getError() === gl.OUT_OF_MEMORY) throw new Error('OOM');
+    if (!positionBuffer || gl.getError() === gl.OUT_OF_MEMORY) { _sharedGl = null; console.error('OOM creating buffer in drawWebGL'); throw new Error('OOM'); }
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
         -1, -1,  1, -1,  -1,  1,
@@ -980,7 +1144,7 @@ function drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH) {
     gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
     const texture = gl.createTexture();
-    if (!texture || gl.getError() === gl.OUT_OF_MEMORY) throw new Error('OOM');
+    if (!texture || gl.getError() === gl.OUT_OF_MEMORY) { _sharedGl = null; console.error('OOM creating texture in drawWebGL'); throw new Error('OOM'); }
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -988,7 +1152,7 @@ function drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-    if (gl.getError() === gl.OUT_OF_MEMORY) throw new Error('OOM');
+    if (gl.getError() === gl.OUT_OF_MEMORY) { _sharedGl = null; console.error('OOM texImage2D in drawWebGL'); throw new Error('OOM'); }
 
     gl.uniform1i(gl.getUniformLocation(program, 'u_image'), 0);
     gl.uniform2f(gl.getUniformLocation(program, 'u_texSize'), texW, texH);
@@ -997,8 +1161,8 @@ function drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH) {
 }
 
 function renderFSR(img, canvas, cw, ch, texW, texH, sharpness = 2) {
-    const gl = _sharedGl;
-    if (!gl) return;
+    const gl = getGL();
+    if (!gl) { console.error('GL context is null in renderFSR'); return; }
 
     const vsSource = `
         attribute vec2 a_position;
@@ -1076,10 +1240,10 @@ function renderFSR(img, canvas, cw, ch, texW, texH, sharpness = 2) {
     gl.uniform1f(gl.getUniformLocation(program, 'u_sharpness'), sharpness);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
-    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) throw new Error('OOM');
+    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) { _sharedGl = null; console.error('OOM or Context Lost in renderFSR'); throw new Error('OOM'); }
     
     const ctx = canvas.getContext('2d', { alpha: false });
-    ctx.drawImage(gl.canvas, 0, 0);
+    ctx.drawImage(gl.canvas, 0, 0, cw, ch);
 
     gl.deleteTexture(texture);
     gl.deleteBuffer(positionBuffer);
@@ -1087,8 +1251,8 @@ function renderFSR(img, canvas, cw, ch, texW, texH, sharpness = 2) {
 }
 
 function renderAntiJaggies(img, canvas, cw, ch, texW, texH) {
-    const gl = _sharedGl;
-    if (!gl) return;
+    const gl = getGL();
+    if (!gl) { console.error('GL context is null in renderAntiJaggies'); return; }
 
     const vsSource = `
         attribute vec2 a_position;
@@ -1171,10 +1335,139 @@ function renderAntiJaggies(img, canvas, cw, ch, texW, texH) {
     const { program, texture, positionBuffer } = drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
-    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) throw new Error('OOM');
+    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) { _sharedGl = null; console.error('OOM or Context Lost in renderAntiJaggies'); throw new Error('OOM'); }
     
     const ctx = canvas.getContext('2d', { alpha: false });
-    ctx.drawImage(gl.canvas, 0, 0);
+    ctx.drawImage(gl.canvas, 0, 0, cw, ch);
+
+    gl.deleteTexture(texture);
+    gl.deleteBuffer(positionBuffer);
+    gl.deleteProgram(program);
+}
+
+function renderAdptvShogaPlus(img, canvas, cw, ch, texW, texH, scale) {
+    const gl = getGL();
+    if (!gl) { console.error('GL context is null in renderAdptvShogaPlus'); return; }
+
+    const vsSource = `
+        attribute vec2 a_position;
+        varying vec2 v_texCoord;
+        void main() {
+            gl_Position = vec4(a_position, 0.0, 1.0);
+            v_texCoord = a_position * 0.5 + 0.5;
+            v_texCoord.y = 1.0 - v_texCoord.y;
+        }
+    `;
+
+    const fsSource = `
+        precision highp float;
+        varying vec2 v_texCoord;
+        uniform sampler2D u_image;
+        uniform vec2 u_texSize;
+        uniform float u_scale;
+
+        void main() {
+            vec2 d_src = 1.0 / u_texSize;
+            vec2 d_tgt = d_src / u_scale;
+            vec2 p = v_texCoord;
+            
+            vec3 c = texture2D(u_image, p).rgb;
+            
+            vec3 n_low = texture2D(u_image, p + vec2(0.0, -d_src.y)).rgb;
+            vec3 s_low = texture2D(u_image, p + vec2(0.0, d_src.y)).rgb;
+            vec3 w_low = texture2D(u_image, p + vec2(-d_src.x, 0.0)).rgb;
+            vec3 e_low = texture2D(u_image, p + vec2(d_src.x, 0.0)).rgb;
+            
+            vec3 nw_low = texture2D(u_image, p + vec2(-d_src.x, -d_src.y)).rgb;
+            vec3 ne_low = texture2D(u_image, p + vec2(d_src.x, -d_src.y)).rgb;
+            vec3 sw_low = texture2D(u_image, p + vec2(-d_src.x, d_src.y)).rgb;
+            vec3 se_low = texture2D(u_image, p + vec2(d_src.x, d_src.y)).rgb;
+            
+            vec3 blur = (n_low + s_low + w_low + e_low) * 0.15 + (nw_low + ne_low + sw_low + se_low) * 0.1;
+            vec3 delta = (c - blur) * 1.8;
+            
+            vec3 n = texture2D(u_image, p + vec2(0.0, -d_tgt.y)).rgb;
+            vec3 s = texture2D(u_image, p + vec2(0.0, d_tgt.y)).rgb;
+            vec3 w = texture2D(u_image, p + vec2(-d_tgt.x, 0.0)).rgb;
+            vec3 e = texture2D(u_image, p + vec2(d_tgt.x, 0.0)).rgb;
+            
+            float lC = dot(c, vec3(0.299, 0.587, 0.114));
+            float lN = dot(n, vec3(0.299, 0.587, 0.114));
+            float lS = dot(s, vec3(0.299, 0.587, 0.114));
+            float lW = dot(w, vec3(0.299, 0.587, 0.114));
+            float lE = dot(e, vec3(0.299, 0.587, 0.114));
+            
+            float lMin = min(min(min(lC, lN), min(lS, lW)), lE);
+            float lMax = max(max(max(lC, lN), max(lS, lW)), lE);
+            float contrast = lMax - lMin;
+            
+            vec3 finalColor = c;
+            
+            if (contrast < 0.08) {
+                finalColor = c + delta * 0.5;
+            } else {
+                vec3 nw = texture2D(u_image, p + vec2(-d_tgt.x, -d_tgt.y)).rgb;
+                vec3 ne = texture2D(u_image, p + vec2(d_tgt.x, -d_tgt.y)).rgb;
+                vec3 sw = texture2D(u_image, p + vec2(-d_tgt.x, d_tgt.y)).rgb;
+                vec3 se = texture2D(u_image, p + vec2(d_tgt.x, d_tgt.y)).rgb;
+                
+                float lNW = dot(nw, vec3(0.299, 0.587, 0.114));
+                float lNE = dot(ne, vec3(0.299, 0.587, 0.114));
+                float lSW = dot(sw, vec3(0.299, 0.587, 0.114));
+                float lSE = dot(se, vec3(0.299, 0.587, 0.114));
+                
+                float dirX = -((lNW + lNE) - (lSW + lSE));
+                float dirY =  ((lNW + lSW) - (lNE + lSE));
+                
+                vec2 dir = vec2(dirX, dirY);
+                float dirReduce = max((lNW + lNE + lSW + lSE) * 0.25 * 0.125, 0.0078125);
+                float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+                
+                dir = min(vec2(8.0, 8.0), max(vec2(-8.0, -8.0), dir * rcpDirMin)) * d_tgt;
+                
+                vec2 edgeDir = normalize(dir + vec2(0.00001)) * d_tgt;
+                vec3 sampleA = texture2D(u_image, p + edgeDir).rgb;
+                vec3 sampleB = texture2D(u_image, p - edgeDir).rgb;
+                
+                vec3 morphColor = c;
+                float lA = dot(sampleA, vec3(0.299, 0.587, 0.114));
+                float lB = dot(sampleB, vec3(0.299, 0.587, 0.114));
+                
+                if (lA < lC && lB < lC) {
+                    morphColor = mix(c, min(sampleA, sampleB), 0.6);
+                } else if (lA > lC && lB > lC) {
+                    morphColor = mix(c, max(sampleA, sampleB), 0.6);
+                }
+                
+                vec3 res1 = (texture2D(u_image, p + dir * (1.0/3.0 - 0.5)).rgb + texture2D(u_image, p + dir * (2.0/3.0 - 0.5)).rgb) * 0.5;
+                vec3 res2 = res1 * 0.5 + (texture2D(u_image, p + dir * (0.0/3.0 - 0.5)).rgb + texture2D(u_image, p + dir * (3.0/3.0 - 0.5)).rgb) * 0.25;
+                
+                float lRes2 = dot(res2, vec3(0.299, 0.587, 0.114));
+                vec3 fxaaColor = (lRes2 < lMin || lRes2 > lMax) ? res1 : res2;
+                
+                vec3 baseColor = mix(morphColor, fxaaColor, 0.6);
+                finalColor = baseColor + delta;
+            }
+            
+            vec3 minC = min(min(min(c, n_low), min(s_low, w_low)), e_low);
+            vec3 maxC = max(max(max(c, n_low), max(s_low, w_low)), e_low);
+            vec3 minC_diag = min(min(min(nw_low, ne_low), min(sw_low, se_low)), minC);
+            vec3 maxC_diag = max(max(max(nw_low, ne_low), max(sw_low, se_low)), maxC);
+            
+            vec3 overshoot = (maxC_diag - minC_diag) * 0.05;
+            finalColor = clamp(finalColor, minC_diag - overshoot, maxC_diag + overshoot);
+            
+            gl_FragColor = vec4(finalColor, 1.0);
+        }
+    `;
+    const { program, texture, positionBuffer } = drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH);
+    gl.uniform1f(gl.getUniformLocation(program, 'u_scale'), scale);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.finish();
+    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) { _sharedGl = null; console.error('OOM or Context Lost in renderAdptvShogaPlus'); throw new Error('OOM'); }
+    
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.drawImage(gl.canvas, 0, 0, cw, ch);
 
     gl.deleteTexture(texture);
     gl.deleteBuffer(positionBuffer);
@@ -1182,8 +1475,8 @@ function renderAntiJaggies(img, canvas, cw, ch, texW, texH) {
 }
 
 function renderAnime4xLite(img, canvas, cw, ch, texW, texH) {
-    const gl = _sharedGl;
-    if (!gl) return;
+    const gl = getGL();
+    if (!gl) { console.error('GL context is null in renderAnime4xLite'); return; }
 
     const vsSource = `
         attribute vec2 a_position;
@@ -1224,10 +1517,10 @@ function renderAnime4xLite(img, canvas, cw, ch, texW, texH) {
     const { program, texture, positionBuffer } = drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
-    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) throw new Error('OOM');
+    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) { _sharedGl = null; console.error('OOM or Context Lost in renderAnime4xLite'); throw new Error('OOM'); }
     
     const ctx = canvas.getContext('2d', { alpha: false });
-    ctx.drawImage(gl.canvas, 0, 0);
+    ctx.drawImage(gl.canvas, 0, 0, cw, ch);
 
     gl.deleteTexture(texture);
     gl.deleteBuffer(positionBuffer);
@@ -1235,8 +1528,8 @@ function renderAnime4xLite(img, canvas, cw, ch, texW, texH) {
 }
 
 function renderXBRZLite(img, canvas, cw, ch, texW, texH) {
-    const gl = _sharedGl;
-    if (!gl) return;
+    const gl = getGL();
+    if (!gl) { console.error('GL context is null in renderXBRZLite'); return; }
 
     const vsSource = `
         attribute vec2 a_position;
@@ -1288,10 +1581,10 @@ function renderXBRZLite(img, canvas, cw, ch, texW, texH) {
     const { program, texture, positionBuffer } = drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
-    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) throw new Error('OOM');
+    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) { _sharedGl = null; console.error('OOM or Context Lost in renderXBRZLite'); throw new Error('OOM'); }
     
     const ctx = canvas.getContext('2d', { alpha: false });
-    ctx.drawImage(gl.canvas, 0, 0);
+    ctx.drawImage(gl.canvas, 0, 0, cw, ch);
 
     gl.deleteTexture(texture);
     gl.deleteBuffer(positionBuffer);
@@ -1327,15 +1620,17 @@ async function performUpscale(srcImg, actualMode, fsrRatio, nw, nh, upscaleW, up
             upChunkCanvas.height = upChunkH;
 
             if (actualMode === 'FSR') {
-                const intCanvas = document.createElement('canvas');
-                intCanvas.width = upChunkW;
-                intCanvas.height = upChunkH;
-                renderFSR(chunkCanvas, intCanvas, upChunkW, upChunkH, srcW, srcH, 0.2);
-                renderAntiJaggies(intCanvas, upChunkCanvas, upChunkW, upChunkH, upChunkW, upChunkH);
+                const intermediateCanvas = document.createElement('canvas');
+                intermediateCanvas.width = upChunkW;
+                intermediateCanvas.height = upChunkH;
+                renderFSR(chunkCanvas, intermediateCanvas, upChunkW, upChunkH, srcW, srcH, 0.2);
+                renderAntiJaggies(intermediateCanvas, upChunkCanvas, upChunkW, upChunkH, upChunkW, upChunkH);
             } else if (actualMode === 'ANIME4X') {
                 renderAnime4xLite(chunkCanvas, upChunkCanvas, upChunkW, upChunkH, srcW, srcH);
             } else if (actualMode === 'XBRZ') {
                 renderXBRZLite(chunkCanvas, upChunkCanvas, upChunkW, upChunkH, srcW, srcH);
+            } else if (actualMode === 'ADPTV_SHOGA') {
+                renderAdptvShogaPlus(chunkCanvas, upChunkCanvas, upChunkW, upChunkH, srcW, srcH, fsrRatio);
             }
 
             const outX = (x - srcX) * fsrRatio;
@@ -1368,20 +1663,51 @@ function processNextPreload() {
     let targetIndex = -1;
     let MAX_PRELOAD = 16;
     let actualMode = upscaleMode;
-    let fsrRatio = (actualMode !== 'BILINEAR' && actualMode !== 'OFF') ? 2.0 : 1;
-    let MAX_DIM = MAX_GL_TEXTURE_SIZE;
-    let MAX_AREA = getDynamicMaxArea();
-
+    let isBilinear = actualMode === 'BILINEAR';
+    
     for (let i = 1; i <= MAX_PRELOAD; i++) {
         let rightIdx = currentIndex + i;
         let leftIdx = currentIndex - i;
-        let checkOrder = readDir === 'LTR' ?[rightIdx, leftIdx] :[leftIdx, rightIdx];
+        let checkOrder = readDir === 'LTR' ?[rightIdx, leftIdx] : [leftIdx, rightIdx];
         
         for (let idx of checkOrder) {
             if (idx >= 0 && idx < files.length) {
                 const origUrl = getFileUrl(idx);
-                const cacheKey = origUrl + '_' + actualMode + '_' + fsrRatio;
-                if (!upscaleCache.has(cacheKey)) {
+                let checkRatio = (isHighMemMode && is4xEnabled && !isBilinear && actualMode !== 'ADPTV_SHOGA') ? 4.0 : (isBilinear ? 1.0 : 2.0);
+                
+                if (actualMode === 'ADPTV_SHOGA') {
+                    if (files[idx].nw) {
+                        let displayW = window.innerWidth * currentZoom;
+                        let dRatio = displayW / files[idx].nw;
+                        checkRatio = Math.max(1.0, Math.ceil(dRatio * 10) / 10);
+                        const maxArea = getDynamicMaxArea();
+                        while ((files[idx].nw * checkRatio * files[idx].nh * checkRatio > maxArea || files[idx].nw * checkRatio > 16384 || files[idx].nh * checkRatio > 16384) && checkRatio > 1.0) {
+                            checkRatio = Math.max(1.0, checkRatio - 0.1);
+                        }
+                        checkRatio = Math.round(checkRatio * 10) / 10;
+                    } else {
+                        checkRatio = -1; 
+                    }
+                }
+
+                let needsProcessing = true;
+                if (checkRatio === -1) {
+                    needsProcessing = false;
+                } else {
+                    for (let [key, cacheVal] of upscaleCache.entries()) {
+                        if (key.startsWith(origUrl + '_' + actualMode + '_')) {
+                            let cachedRatio = parseFloat(key.split('_').pop());
+                            if (!isNaN(cachedRatio) && cachedRatio >= checkRatio) {
+                                if (cacheVal !== 'error' && cacheVal !== 'skipped') {
+                                    needsProcessing = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (needsProcessing) {
                     targetIndex = idx;
                     break;
                 }
@@ -1397,9 +1723,9 @@ function processNextPreload() {
 
     const idx = targetIndex;
     const origUrl = getFileUrl(idx);
-    const cacheKey = origUrl + '_' + actualMode + '_' + fsrRatio;
 
-    if (actualMode === 'BILINEAR') {
+    if (isBilinear) {
+        const cacheKey = origUrl + '_' + actualMode + '_1';
         upscaleCache.set(cacheKey, origUrl);
         preloadQueueTimer = setTimeout(processNextPreload, 50);
         return;
@@ -1415,48 +1741,102 @@ function processNextPreload() {
         const nw = srcImg.naturalWidth;
         const nh = srcImg.naturalHeight;
         if (!nw || !nh) {
+            console.error('processNextPreload: nw or nh is 0 for', origUrl);
             preloadQueueTimer = setTimeout(processNextPreload, 50);
             return;
         }
 
-        const upscaleW = Math.ceil(nw * fsrRatio);
-        const upscaleH = Math.ceil(nh * fsrRatio);
+        if (files[idx] && !files[idx].nw) {
+            files[idx].nw = nw;
+            files[idx].nh = nh;
+        }
 
-        if (upscaleW > 16384 || upscaleH > 16384) {
-            upscaleCache.set(cacheKey, origUrl);
-            if (viewMode === 'VIEWER') {
-                const domImgs = dom.viewerSlider.querySelectorAll(`img[data-file-index="${idx}"]:not(.crossfade-clone)`);
-                domImgs.forEach(domImg => {
-                    if (domImg.dataset.fsrAppliedTier !== 'NATIVE_BILINEAR') {
-                        executeCrossfadeSwap(domImg, origUrl, 'NATIVE_BILINEAR');
-                    }
-                });
+        let originalTargetRatio = (isHighMemMode && is4xEnabled && !isBilinear && actualMode !== 'ADPTV_SHOGA') ? 4.0 : (isBilinear ? 1.0 : 2.0);
+        let currentRatio = originalTargetRatio;
+        let fallbackActive = false;
+
+        if (actualMode === 'ADPTV_SHOGA') {
+            let displayW = window.innerWidth * currentZoom;
+            let dRatio = displayW / nw;
+            currentRatio = Math.max(1.0, Math.ceil(dRatio * 10) / 10);
+            
+            const maxArea = getDynamicMaxArea();
+            while ((nw * currentRatio * nh * currentRatio > maxArea || nw * currentRatio > 16384 || nh * currentRatio > 16384) && currentRatio > 1.0) {
+                currentRatio = Math.max(1.0, currentRatio - 0.1);
             }
+            currentRatio = Math.round(currentRatio * 10) / 10;
+            originalTargetRatio = currentRatio;
+        } else {
+            if (originalTargetRatio === 4.0 && (nw * 4.0 > 16384 || nh * 4.0 > 16384)) {
+                currentRatio = 2.0;
+                fallbackActive = true;
+            }
+        }
+
+        const cacheKey = origUrl + '_' + actualMode + '_' + originalTargetRatio;
+        const actualCacheKey = origUrl + '_' + actualMode + '_' + currentRatio;
+
+        if (viewMode !== 'VIEWER' || Math.abs(idx - currentIndex) > 16) {
+            preloadQueueTimer = setTimeout(processNextPreload, 50);
+            return;
+        }
+
+        if (upscaleCache.has(cacheKey)) {
+            preloadQueueTimer = setTimeout(processNextPreload, 50);
+            return;
+        }
+
+        upscaleCache.set(cacheKey, 'processing');
+        if (fallbackActive) upscaleCache.set(actualCacheKey, 'processing');
+
+        const upscaleW = Math.ceil(nw * currentRatio);
+        const upscaleH = Math.ceil(nh * currentRatio);
+
+        if (actualMode !== 'ADPTV_SHOGA' && (upscaleW > 16384 || upscaleH > 16384)) {
+            upscaleCache.set(actualCacheKey, origUrl);
+            if (fallbackActive) upscaleCache.set(cacheKey, origUrl);
             preloadQueueTimer = setTimeout(processNextPreload, 50);
             return;
         }
 
         try {
-            let finalCanvas;
-            let requiresTiling = (nw * fsrRatio > MAX_DIM || nh * fsrRatio > MAX_DIM || (nw * fsrRatio) * (nh * fsrRatio) > MAX_AREA);
-            
-            if (requiresTiling) {
-                finalCanvas = await performUpscale(srcImg, actualMode, fsrRatio, nw, nh, upscaleW, upscaleH);
-            } else {
-                finalCanvas = document.createElement('canvas');
-                finalCanvas.width = upscaleW;
-                finalCanvas.height = upscaleH;
-                if (actualMode === 'FSR') {
-                    const intermediateCanvas = document.createElement('canvas');
-                    intermediateCanvas.width = upscaleW;
-                    intermediateCanvas.height = upscaleH;
-                    renderFSR(srcImg, intermediateCanvas, upscaleW, upscaleH, nw, nh, 0.2);
-                    renderAntiJaggies(intermediateCanvas, finalCanvas, upscaleW, upscaleH, upscaleW, upscaleH);
-                } else if (actualMode === 'ANIME4X') {
-                    renderAnime4xLite(srcImg, finalCanvas, upscaleW, upscaleH, nw, nh);
-                } else if (actualMode === 'XBRZ') {
-                    renderXBRZLite(srcImg, finalCanvas, upscaleW, upscaleH, nw, nh);
+            const runSinglePass = async (inputImg, inW, inH, ratio) => {
+                let outW = Math.ceil(inW * ratio);
+                let outH = Math.ceil(inH * ratio);
+                let resCanvas;
+                let MAX_DIM = MAX_GL_TEXTURE_SIZE;
+                let MAX_AREA = getDynamicMaxArea();
+                let requiresTiling = (inW * ratio > MAX_DIM || inH * ratio > MAX_DIM || (inW * ratio) * (inH * ratio) > MAX_AREA);
+
+                if (requiresTiling) {
+                    resCanvas = await performUpscale(inputImg, actualMode, ratio, inW, inH, outW, outH);
+                } else {
+                    resCanvas = document.createElement('canvas');
+                    resCanvas.width = outW;
+                    resCanvas.height = outH;
+                    if (actualMode === 'FSR') {
+                        const intermediateCanvas = document.createElement('canvas');
+                        intermediateCanvas.width = outW;
+                        intermediateCanvas.height = outH;
+                        renderFSR(inputImg, intermediateCanvas, outW, outH, inW, inH, 0.2);
+                        renderAntiJaggies(intermediateCanvas, resCanvas, outW, outH, outW, outH);
+                    } else if (actualMode === 'ANIME4X') {
+                        renderAnime4xLite(inputImg, resCanvas, outW, outH, inW, inH);
+                    } else if (actualMode === 'XBRZ') {
+                        renderXBRZLite(inputImg, resCanvas, outW, outH, inW, inH);
+                    } else if (actualMode === 'ADPTV_SHOGA') {
+                        renderAdptvShogaPlus(inputImg, resCanvas, outW, outH, inW, inH, ratio);
+                    }
                 }
+                return resCanvas;
+            };
+
+            let finalCanvas;
+            if (currentRatio === 4.0) {
+                let pass1Canvas = await runSinglePass(srcImg, nw, nh, 2.0);
+                finalCanvas = await runSinglePass(pass1Canvas, nw * 2.0, nh * 2.0, 2.0);
+            } else {
+                finalCanvas = await runSinglePass(srcImg, nw, nh, currentRatio);
             }
             
             const fileType = files[idx].type;
@@ -1464,52 +1844,40 @@ function processNextPreload() {
             
             finalCanvas.toBlob(blob => {
                 if (!blob) {
-                    upscaleCache.set(cacheKey, 'error');
-                    if (viewMode === 'VIEWER') {
-                        const domImgs = dom.viewerSlider.querySelectorAll(`img[data-file-index="${idx}"]:not(.crossfade-clone)`);
-                        domImgs.forEach(domImg => {
-                            if (domImg.dataset.fsrAppliedTier !== 'NATIVE_BILINEAR') {
-                                executeCrossfadeSwap(domImg, origUrl, 'NATIVE_BILINEAR');
-                            }
-                        });
-                    }
+                    console.error('Preload Canvas toBlob failed for:', actualCacheKey);
+                    upscaleCache.set(actualCacheKey, 'error');
+                    if (fallbackActive) upscaleCache.set(cacheKey, 'error');
                     preloadQueueTimer = setTimeout(processNextPreload, 50);
                     return;
                 }
                 const newUrl = URL.createObjectURL(blob);
                 if (upscaleCache.size >= 64) {
-                    const firstKey = upscaleCache.keys().next().value;
-                    URL.revokeObjectURL(upscaleCache.get(firstKey));
-                    upscaleCache.delete(firstKey);
-                }
-                upscaleCache.set(cacheKey, newUrl);
-                
-                if (viewMode === 'VIEWER') {
-                    const domImgs = dom.viewerSlider.querySelectorAll(`img[data-file-index="${idx}"]:not(.crossfade-clone)`);
-                    domImgs.forEach(domImg => {
-                        if (domImg.dataset.fsrAppliedTier !== cacheKey) {
-                            executeCrossfadeSwap(domImg, newUrl, cacheKey);
+                    for (const[k, v] of upscaleCache.entries()) {
+                        if (v !== 'processing') {
+                            if (v && v.startsWith('blob:')) URL.revokeObjectURL(v);
+                            upscaleCache.delete(k);
+                            break;
                         }
-                    });
+                    }
                 }
-                
+                upscaleCache.set(actualCacheKey, newUrl);
+                if (fallbackActive) upscaleCache.set(cacheKey, newUrl);
+
+                clearTimeout(upscaleDebounceTimer);
+                upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 100);
+
                 preloadQueueTimer = setTimeout(processNextPreload, 50);
             }, mime, 0.92);
         } catch (e) {
-            upscaleCache.set(cacheKey, 'error');
-            if (viewMode === 'VIEWER') {
-                const domImgs = dom.viewerSlider.querySelectorAll(`img[data-file-index="${idx}"]:not(.crossfade-clone)`);
-                domImgs.forEach(domImg => {
-                    if (domImg.dataset.fsrAppliedTier !== 'NATIVE_BILINEAR') {
-                        executeCrossfadeSwap(domImg, origUrl, 'NATIVE_BILINEAR');
-                    }
-                });
-            }
+            console.error('Preload upscaling process failed:', e);
+            upscaleCache.set(actualCacheKey, 'error');
+            if (fallbackActive) upscaleCache.set(cacheKey, 'error');
             preloadQueueTimer = setTimeout(processNextPreload, 50);
-            return;
         }
     };
-    srcImg.onerror = () => {
+    srcImg.onerror = (err) => {
+        console.error('Preload failed to load source image:', origUrl, err);
+        const cacheKey = origUrl + '_' + actualMode + '_' + originalTargetRatio;
         upscaleCache.set(cacheKey, 'error'); 
         preloadQueueTimer = setTimeout(processNextPreload, 50);
     };
@@ -1525,262 +1893,369 @@ function startPreloadQueue() {
 
 const executeCrossfadeSwap = (img, targetUrl, tierName) => {
     if (!img.parentElement) return;
-    img.parentElement.style.position = 'relative';
-    const clone = new Image();
-    clone.src = img.src;
-    clone.className = img.className;
-    clone.classList.add('crossfade-clone');
-    if (img.dataset.fsrAppliedTier) {
-        clone.dataset.fsrAppliedTier = img.dataset.fsrAppliedTier;
+    
+    if (img.src === targetUrl || img.dataset.pendingSwapUrl === targetUrl) {
+        if (img.src === targetUrl) {
+            if (tierName) {
+                img.dataset.upscaleAppliedTier = tierName;
+                if (tierName === 'NATIVE_BILINEAR') delete img.dataset.upscaleProcessingKey;
+            } else {
+                delete img.dataset.upscaleAppliedTier;
+                delete img.dataset.upscaleProcessingKey;
+            }
+        }
+        return;
     }
-    clone.style.cssText = img.style.cssText;
-    clone.style.position = 'absolute';
-    clone.style.left = img.offsetLeft + 'px';
-    clone.style.top = img.offsetTop + 'px';
-    clone.style.width = img.offsetWidth + 'px';
-    clone.style.height = img.offsetHeight + 'px';
-    clone.style.zIndex = '10';
-    clone.style.transition = 'opacity 0.3s ease-out';
-    clone.style.pointerEvents = 'none';
-    clone.style.objectFit = window.getComputedStyle(img).objectFit;
-    clone.style.objectPosition = window.getComputedStyle(img).objectPosition;
-    
-    img.parentElement.appendChild(clone);
-    
-    img.src = targetUrl;
-    if (tierName) {
-        img.dataset.fsrAppliedTier = tierName;
-        if (tierName === 'NATIVE_BILINEAR') delete img.dataset.fsrProcessingKey;
-    } else {
-        delete img.dataset.fsrAppliedTier;
-        delete img.dataset.fsrProcessingKey;
+
+    let zoom = img.closest('#viewer-content') ? currentZoom : 1;
+    if (zoom > 1.1) {
+        img.dataset.pendingSwapUrl = targetUrl;
+        img.src = targetUrl;
+        if (tierName) {
+            img.dataset.upscaleAppliedTier = tierName;
+            if (tierName === 'NATIVE_BILINEAR') delete img.dataset.upscaleProcessingKey;
+        } else {
+            delete img.dataset.upscaleAppliedTier;
+            delete img.dataset.upscaleProcessingKey;
+        }
+        return;
     }
-    
-    requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-            clone.style.opacity = '0';
+
+    img.dataset.pendingSwapUrl = targetUrl;
+
+    const preloader = new Image();
+    preloader.onload = () => {
+        if (img.dataset.pendingSwapUrl !== targetUrl) return;
+        if (!img.parentElement) return;
+
+        img.parentElement.style.position = 'relative';
+        
+        const overlay = new Image();
+        overlay.src = targetUrl;
+        overlay.className = img.className;
+        overlay.classList.add('crossfade-clone');
+        if (tierName) {
+            overlay.dataset.upscaleAppliedTier = tierName;
+        }
+        
+        const computedStyle = window.getComputedStyle(img);
+        
+        overlay.style.cssText = img.style.cssText;
+        overlay.style.position = 'absolute';
+        
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.left = '50%';
+        overlay.style.top = '50%';
+        overlay.style.transform = 'translate(-50%, -50%)';
+        overlay.style.zIndex = '10';
+        overlay.style.opacity = '0';
+        
+        overlay.style.transition = 'opacity 1.5s ease-in-out';
+        overlay.style.pointerEvents = 'none';
+        overlay.style.objectFit = computedStyle.objectFit;
+        overlay.style.objectPosition = computedStyle.objectPosition;
+        
+        img.parentElement.appendChild(overlay);
+        
+        overlay.decode().then(() => {
+            if (img.dataset.pendingSwapUrl !== targetUrl) {
+                if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+                return;
+            }
+            
+            void overlay.offsetWidth;
+            
+            overlay.style.opacity = '1';
             setTimeout(() => {
-                if (clone.parentNode) clone.parentNode.removeChild(clone);
-            }, 350);
+                if (img.dataset.pendingSwapUrl === targetUrl) {
+                    img.src = targetUrl;
+                    if (tierName) {
+                        img.dataset.upscaleAppliedTier = tierName;
+                        if (tierName === 'NATIVE_BILINEAR') delete img.dataset.upscaleProcessingKey;
+                    } else {
+                        delete img.dataset.upscaleAppliedTier;
+                        delete img.dataset.upscaleProcessingKey;
+                    }
+                }
+                if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+            }, 1550);
+        }).catch(() => {
+            if (img.dataset.pendingSwapUrl === targetUrl) {
+                img.src = targetUrl;
+                if (tierName) {
+                    img.dataset.upscaleAppliedTier = tierName;
+                    if (tierName === 'NATIVE_BILINEAR') delete img.dataset.upscaleProcessingKey;
+                } else {
+                    delete img.dataset.upscaleAppliedTier;
+                    delete img.dataset.upscaleProcessingKey;
+                }
+            }
+            if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
         });
-    });
+    };
+    preloader.onerror = (err) => {
+        console.error('Crossfade preloader failed to load:', targetUrl, err);
+        if (img.dataset.pendingSwapUrl === targetUrl) {
+            delete img.dataset.pendingSwapUrl;
+        }
+    };
+    preloader.src = targetUrl;
 };
 
-function applyFSROverlays() {
+function applyUpscaleOverlays() {
     if (upscaleMode === 'OFF' || viewMode !== 'VIEWER') return;
     if (dom.body.classList.contains('animating')) return;
 
     const imgs = dom.viewerContent.querySelectorAll('img:not(.crossfade-clone)');
-    let fsrDisabledDueToSize = false;
+    
+    const warningIds = {
+        'FSR': 'warning-fsr',
+        'ANIME4X': 'warning-anime4x',
+        'XBRZ': 'warning-xbrz'
+    };
+    
+    Object.values(warningIds).forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
 
     imgs.forEach(img => {
-        const nw = parseInt(img.dataset.origNw) || img.naturalWidth;
-        const nh = parseInt(img.dataset.origNh) || img.naturalHeight;
-        if (!nw || !nh) return;
+        const fIdx = parseInt(img.dataset.fileIndex);
+        if (isNaN(fIdx) || !files[fIdx]) return;
+        const fileObj = files[fIdx];
 
-        let MAX_DIM = MAX_GL_TEXTURE_SIZE;
-        let MAX_AREA = getDynamicMaxArea();
-        let actualMode = upscaleMode;
-        let fsrRatio = 1;
-        let isTooLarge = false;
-        
-        if (upscaleMode !== 'BILINEAR') {
-            fsrRatio = 2.0;
-            if (nw * 2.0 > 16384 || nh * 2.0 > 16384) {
-                isTooLarge = true;
-                fsrDisabledDueToSize = true;
-            }
-        }
-
-        if (actualMode === 'BILINEAR' || isTooLarge) {
-            if (img.dataset.fsrAppliedTier !== 'NATIVE_BILINEAR') {
-                const doSwap = () => {
-                    if (!dom.viewerContent.contains(img)) return;
-                    executeCrossfadeSwap(img, img.dataset.originalUrl, 'NATIVE_BILINEAR');
-                };
-                if (isPanning || isDragging || dom.body.classList.contains('animating')) {
-                    img.pendingFsrSwap = doSwap;
-                } else {
-                    doSwap();
-                }
-            }
-            return;
-        }
-
-        const cacheKey = img.dataset.originalUrl + '_' + actualMode + '_' + fsrRatio;
-        if (img.dataset.fsrAppliedTier === cacheKey || img.dataset.fsrProcessingKey === cacheKey) return;
-
-        const upscaleW = Math.ceil(nw * fsrRatio);
-        const upscaleH = Math.ceil(nh * fsrRatio);
-
-        const applyUpscaledImage = async (url) => {
-            if (!dom.viewerContent.contains(img) || img.dataset.fsrProcessingKey !== cacheKey) return;
-            const tempImg = new Image();
-            tempImg.src = url;
-            try { 
-                await tempImg.decode(); 
-            } catch (e) { 
-                upscaleCache.delete(cacheKey);
-                delete img.dataset.fsrProcessingKey;
-                if (img.src !== img.dataset.originalUrl) {
-                    img.src = img.dataset.originalUrl;
-                    img.dataset.fsrAppliedTier = 'NATIVE_BILINEAR';
-                }
-                return; 
-            }
-            
-            const doSwap = () => {
-                if (!dom.viewerContent.contains(img) || img.dataset.fsrProcessingKey !== cacheKey) return;
-                executeCrossfadeSwap(img, url, cacheKey);
-            };
-
-            if (isPanning || isDragging || dom.body.classList.contains('animating')) {
-                img.pendingFsrSwap = doSwap;
+        let nw = fileObj.nw;
+        let nh = fileObj.nh;
+        if (!nw || !nh) {
+            if (img.complete && img.naturalWidth && img.naturalHeight) {
+                nw = img.naturalWidth;
+                nh = img.naturalHeight;
+                fileObj.nw = nw;
+                fileObj.nh = nh;
             } else {
-                doSwap();
+                console.warn(`applyUpscaleOverlays: nw/nh missing for index ${fIdx}. Waiting for load.`);
+                if (!img.complete) {
+                    img.addEventListener('load', () => {
+                        clearTimeout(upscaleDebounceTimer);
+                        upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 100);
+                    }, { once: true });
+                }
+                return;
             }
-        };
+        }
 
-        if (upscaleCache.has(cacheKey)) {
-            const cachedUrl = upscaleCache.get(cacheKey);
-            upscaleCache.delete(cacheKey);
-            upscaleCache.set(cacheKey, cachedUrl);
-            img.dataset.fsrProcessingKey = cacheKey;
-            applyUpscaledImage(cachedUrl);
+        let actualMode = upscaleMode;
+        let isBilinear = actualMode === 'BILINEAR';
+        let originalTargetRatio = (isHighMemMode && is4xEnabled && !isBilinear && actualMode !== 'ADPTV_SHOGA') ? 4.0 : (isBilinear ? 1.0 : 2.0);
+        let targetRatio = originalTargetRatio;
+
+        let fallbackActive = false;
+
+        if (actualMode === 'ADPTV_SHOGA') {
+            let displayW = img.getBoundingClientRect().width;
+            if (displayW === 0) displayW = img.offsetWidth * currentZoom;
+            if (displayW === 0) displayW = window.innerWidth * currentZoom;
+            
+            let dynamicRatio = displayW / nw;
+            targetRatio = Math.max(1.0, Math.ceil(dynamicRatio * 10) / 10);
+            
+            const maxArea = getDynamicMaxArea();
+            while ((nw * targetRatio * nh * targetRatio > maxArea || nw * targetRatio > 16384 || nh * targetRatio > 16384) && targetRatio > 1.0) {
+                targetRatio = Math.max(1.0, targetRatio - 0.1);
+            }
+            targetRatio = Math.round(targetRatio * 10) / 10;
+            originalTargetRatio = targetRatio;
+        } else {
+            if (targetRatio === 4.0 && (nw * 4.0 > 16384 || nh * 4.0 > 16384)) {
+                targetRatio = 2.0;
+                fallbackActive = true;
+                const warningEl = document.getElementById(warningIds[actualMode]);
+                if (warningEl) warningEl.style.display = 'flex';
+            }
+        }
+
+        if (isBilinear) {
+            if (img.dataset.upscaleAppliedTier !== 'NATIVE_BILINEAR') {
+                executeCrossfadeSwap(img, img.dataset.originalUrl, 'NATIVE_BILINEAR');
+            }
             return;
         }
 
-        if (isPanning || isDragging) {
+        let currentlyAppliedRatio = -1;
+        if (img.dataset.upscaleAppliedTier && img.dataset.upscaleAppliedTier.startsWith(img.dataset.originalUrl + '_' + actualMode + '_')) {
+            currentlyAppliedRatio = parseFloat(img.dataset.upscaleAppliedTier.split('_').pop());
+        }
+        if (!isNaN(currentlyAppliedRatio) && currentlyAppliedRatio >= targetRatio) return;
+
+        let bestCachedKey = null;
+        let bestCachedRatio = -1;
+        let isProcessingHigher = false;
+        let hasSkippedOrError = false;
+
+        for (let [key, cacheVal] of upscaleCache.entries()) {
+            if (key.startsWith(img.dataset.originalUrl + '_' + actualMode + '_')) {
+                let cachedRatio = parseFloat(key.split('_').pop());
+                if (!isNaN(cachedRatio) && cachedRatio >= targetRatio) {
+                    if (cacheVal === 'processing') {
+                        isProcessingHigher = true;
+                    } else if (cacheVal === 'skipped' || cacheVal === 'error') {
+                        if (cachedRatio === targetRatio || (fallbackActive && cachedRatio === originalTargetRatio)) {
+                            hasSkippedOrError = true;
+                        }
+                    } else {
+                        if (bestCachedRatio === -1 || cachedRatio < bestCachedRatio) {
+                            bestCachedKey = key;
+                            bestCachedRatio = cachedRatio;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (bestCachedKey) {
+            if (img.dataset.upscaleAppliedTier === bestCachedKey || img.dataset.upscaleProcessingKey === bestCachedKey) return;
+            img.dataset.upscaleProcessingKey = bestCachedKey;
+            executeCrossfadeSwap(img, upscaleCache.get(bestCachedKey), bestCachedKey);
             return;
         }
 
-        if (!img.dataset.fsrAppliedTier) {
-            img.dataset.fsrAppliedTier = 'NATIVE_BILINEAR';
+        if (isProcessingHigher) return;
+
+        if (hasSkippedOrError) {
+            if (img.dataset.upscaleAppliedTier !== 'NATIVE_BILINEAR') {
+                executeCrossfadeSwap(img, img.dataset.originalUrl, 'NATIVE_BILINEAR');
+            }
+            return;
         }
 
-        img.dataset.fsrProcessingKey = cacheKey;
+        const cacheKey = img.dataset.originalUrl + '_' + actualMode + '_' + originalTargetRatio;
+        const actualCacheKey = img.dataset.originalUrl + '_' + actualMode + '_' + targetRatio;
 
-        const process = () => {
+        if (img.dataset.upscaleAppliedTier === cacheKey || img.dataset.upscaleProcessingKey === cacheKey) return;
+
+        if (isPanning || isDragging) return;
+
+        img.dataset.upscaleProcessingKey = cacheKey;
+        upscaleCache.set(cacheKey, 'processing');
+        if (fallbackActive) upscaleCache.set(actualCacheKey, 'processing');
+
+        const process = async () => {
             showUpscaleIndicator();
             const srcImg = new Image();
             srcImg.crossOrigin = "anonymous";
-            srcImg.onload = () => {
-                setTimeout(async () => {
-                    if (isPanning || isDragging || dom.body.classList.contains('animating')) {
-                        delete img.dataset.fsrProcessingKey;
-                        hideUpscaleIndicator();
-                        return;
-                    }
-                    
-                    try {
-                        let finalCanvas;
-                        let requiresTiling = (nw * fsrRatio > MAX_DIM || nh * fsrRatio > MAX_DIM || (nw * fsrRatio) * (nh * fsrRatio) > MAX_AREA);
-                        
+            srcImg.onload = async () => {
+                if (img.dataset.upscaleProcessingKey !== cacheKey || viewMode !== 'VIEWER') {
+                    hideUpscaleIndicator();
+                    return;
+                }
+                try {
+                    const runSinglePass = async (inputImg, inW, inH, ratio) => {
+                        let outW = Math.ceil(inW * ratio);
+                        let outH = Math.ceil(inH * ratio);
+                        let resCanvas;
+                        let MAX_DIM = MAX_GL_TEXTURE_SIZE;
+                        let MAX_AREA = getDynamicMaxArea();
+                        let requiresTiling = (inW * ratio > MAX_DIM || inH * ratio > MAX_DIM || (inW * ratio) * (inH * ratio) > MAX_AREA);
+
                         if (requiresTiling) {
-                            finalCanvas = await performUpscale(srcImg, actualMode, fsrRatio, nw, nh, upscaleW, upscaleH);
+                            resCanvas = await performUpscale(inputImg, actualMode, ratio, inW, inH, outW, outH);
                         } else {
-                            finalCanvas = document.createElement('canvas');
-                            finalCanvas.width = upscaleW;
-                            finalCanvas.height = upscaleH;
+                            resCanvas = document.createElement('canvas');
+                            resCanvas.width = outW;
+                            resCanvas.height = outH;
                             if (actualMode === 'FSR') {
                                 const intermediateCanvas = document.createElement('canvas');
-                                intermediateCanvas.width = upscaleW;
-                                intermediateCanvas.height = upscaleH;
-                                renderFSR(srcImg, intermediateCanvas, upscaleW, upscaleH, nw, nh, 0.2);
-                                renderAntiJaggies(intermediateCanvas, finalCanvas, upscaleW, upscaleH, upscaleW, upscaleH);
+                                intermediateCanvas.width = outW;
+                                intermediateCanvas.height = outH;
+                                renderFSR(inputImg, intermediateCanvas, outW, outH, inW, inH, 0.2);
+                                renderAntiJaggies(intermediateCanvas, resCanvas, outW, outH, outW, outH);
                             } else if (actualMode === 'ANIME4X') {
-                                renderAnime4xLite(srcImg, finalCanvas, upscaleW, upscaleH, nw, nh);
+                                renderAnime4xLite(inputImg, resCanvas, outW, outH, inW, inH);
                             } else if (actualMode === 'XBRZ') {
-                                renderXBRZLite(srcImg, finalCanvas, upscaleW, upscaleH, nw, nh);
+                                renderXBRZLite(inputImg, resCanvas, outW, outH, inW, inH);
+                            } else if (actualMode === 'ADPTV_SHOGA') {
+                                renderAdptvShogaPlus(inputImg, resCanvas, outW, outH, inW, inH, ratio);
                             }
                         }
-                        
-                        setTimeout(() => {
-                            if (isPanning || isDragging || dom.body.classList.contains('animating')) {
-                                delete img.dataset.fsrProcessingKey;
-                                hideUpscaleIndicator();
-                                return;
-                            }
-                            const fileType = img.dataset.fileIndex ? files[parseInt(img.dataset.fileIndex)].type : 'image/jpeg';
+                        return resCanvas;
+                    };
+
+                    const convertToUrl = (canvas) => {
+                        return new Promise(resolve => {
+                            const fileType = fileObj.type || 'image/jpeg';
                             const mime = (fileType === 'image/png' || fileType === 'image/webp' || fileType === 'image/gif') ? 'image/png' : 'image/jpeg';
-                            
-                            finalCanvas.toBlob(blob => {
-                                if (!blob) {
-                                    delete img.dataset.fsrProcessingKey;
-                                    if (img.dataset.fsrAppliedTier !== 'NATIVE_BILINEAR') {
-                                        const doSwap = () => {
-                                            if (!dom.viewerContent.contains(img)) return;
-                                            executeCrossfadeSwap(img, img.dataset.originalUrl, 'NATIVE_BILINEAR');
-                                        };
-                                        if (isPanning || isDragging || dom.body.classList.contains('animating')) {
-                                            img.pendingFsrSwap = doSwap;
-                                        } else {
-                                            doSwap();
-                                        }
-                                    }
-                                    hideUpscaleIndicator();
-                                    const warningId = actualMode === 'FSR' ? 'fsr-warning' : (actualMode === 'ANIME4X' ? 'anime4x-warning' : 'xbrz-warning');
-                                    const warningEl = document.getElementById(warningId);
-                                    if (warningEl) warningEl.style.display = 'flex';
-                                    return;
+                            canvas.toBlob(blob => resolve(blob ? URL.createObjectURL(blob) : null), mime, 0.92);
+                        });
+                    };
+
+                    let finalUrl = null;
+                    if (targetRatio === 4.0 && actualMode !== 'ADPTV_SHOGA') {
+                        let p1Canvas = await runSinglePass(srcImg, nw, nh, 2.0);
+                        let p1Url = await convertToUrl(p1Canvas);
+                        if (p1Url) executeCrossfadeSwap(img, p1Url, 'STEP_2X');
+
+                        let p2Canvas = await runSinglePass(p1Canvas, nw * 2.0, nh * 2.0, 2.0);
+                        finalUrl = await convertToUrl(p2Canvas);
+                        if (p1Url) setTimeout(() => URL.revokeObjectURL(p1Url), 2000);
+                    } else if (actualMode === 'ADPTV_SHOGA' && targetRatio > 1.0) {
+                        let p1Url = null;
+                        if (currentlyAppliedRatio < 1.0) {
+                            let p1Canvas = await runSinglePass(srcImg, nw, nh, 1.0);
+                            p1Url = await convertToUrl(p1Canvas);
+                            if (p1Url) executeCrossfadeSwap(img, p1Url, 'STEP_1X_ADPTV');
+                        }
+
+                        let finalCanvas = await runSinglePass(srcImg, nw, nh, targetRatio);
+                        finalUrl = await convertToUrl(finalCanvas);
+                        if (p1Url) setTimeout(() => URL.revokeObjectURL(p1Url), 2000);
+                    } else {
+                        let finalCanvas = await runSinglePass(srcImg, nw, nh, targetRatio);
+                        finalUrl = await convertToUrl(finalCanvas);
+                    }
+
+                    if (finalUrl) {
+                        if (upscaleCache.size >= 64) {
+                            for (const[k, v] of upscaleCache.entries()) {
+                                if (v !== 'processing') {
+                                    if (v && v.startsWith('blob:')) URL.revokeObjectURL(v);
+                                    upscaleCache.delete(k);
+                                    break;
                                 }
-                                const newUrl = URL.createObjectURL(blob);
-                                if (upscaleCache.size >= 64) {
-                                    const firstKey = upscaleCache.keys().next().value;
-                                    URL.revokeObjectURL(upscaleCache.get(firstKey));
-                                    upscaleCache.delete(firstKey);
-                                }
-                                upscaleCache.set(cacheKey, newUrl);
-                                applyUpscaledImage(newUrl);
-                                hideUpscaleIndicator();
-                            }, mime, 0.92);
-                        }, 0);
-                    } catch (e) {
-                        delete img.dataset.fsrProcessingKey;
-                        if (img.dataset.fsrAppliedTier !== 'NATIVE_BILINEAR') {
-                            const doSwap = () => {
-                                if (!dom.viewerContent.contains(img)) return;
-                                executeCrossfadeSwap(img, img.dataset.originalUrl, 'NATIVE_BILINEAR');
-                            };
-                            if (isPanning || isDragging || dom.body.classList.contains('animating')) {
-                                img.pendingFsrSwap = doSwap;
-                            } else {
-                                doSwap();
                             }
                         }
+                        upscaleCache.set(actualCacheKey, finalUrl);
+                        if (fallbackActive) upscaleCache.set(cacheKey, finalUrl);
+                        executeCrossfadeSwap(img, finalUrl, cacheKey);
                         hideUpscaleIndicator();
-                        
-                        const warningId = actualMode === 'FSR' ? 'fsr-warning' : (actualMode === 'ANIME4X' ? 'anime4x-warning' : 'xbrz-warning');
-                        const warningEl = document.getElementById(warningId);
-                        if (warningEl) warningEl.style.display = 'flex';
-                        return;
+                    } else {
+                        console.error('Canvas toBlob failed for:', actualCacheKey);
+                        upscaleCache.set(cacheKey, 'error');
+                        if (fallbackActive) upscaleCache.set(actualCacheKey, 'error');
+                        executeCrossfadeSwap(img, img.dataset.originalUrl, 'NATIVE_BILINEAR');
+                        hideUpscaleIndicator();
                     }
-                }, 0);
+                } catch (e) {
+                    console.error('Upscaling process failed:', e);
+                    upscaleCache.set(cacheKey, 'error');
+                    if (fallbackActive) upscaleCache.set(actualCacheKey, 'error');
+                    executeCrossfadeSwap(img, img.dataset.originalUrl, 'NATIVE_BILINEAR');
+                    hideUpscaleIndicator();
+                }
             };
-            srcImg.onerror = () => {
-                delete img.dataset.fsrProcessingKey;
+            srcImg.onerror = (err) => {
+                console.error('Failed to load source image for upscaling:', img.dataset.originalUrl, err);
+                upscaleCache.set(cacheKey, 'error');
+                if (fallbackActive) upscaleCache.set(actualCacheKey, 'error');
+                executeCrossfadeSwap(img, img.dataset.originalUrl, 'NATIVE_BILINEAR');
                 hideUpscaleIndicator();
             };
-            srcImg.src = img.dataset.originalUrl || img.src;
+            srcImg.src = img.dataset.originalUrl;
         };
 
         if (img.complete) process();
         else img.addEventListener('load', process, { once: true });
     });
-
-    const fsrWarningEl = document.getElementById('fsr-warning');
-    const animeWarningEl = document.getElementById('anime4x-warning');
-    const xbrzWarningEl = document.getElementById('xbrz-warning');
-    
-    if (fsrWarningEl) {
-        fsrWarningEl.style.display = (fsrDisabledDueToSize && upscaleMode === 'FSR') ? 'flex' : 'none';
-    }
-    if (animeWarningEl) {
-        animeWarningEl.style.display = (fsrDisabledDueToSize && upscaleMode === 'ANIME4X') ? 'flex' : 'none';
-    }
-    if (xbrzWarningEl) {
-        xbrzWarningEl.style.display = (fsrDisabledDueToSize && upscaleMode === 'XBRZ') ? 'flex' : 'none';
-    }
     
     startPreloadQueue();
 }
@@ -1789,7 +2264,7 @@ function processFileList(fileList, title) {
     urlCache.forEach(url => URL.revokeObjectURL(url));
     urlCache.clear();
     
-    upscaleCache.forEach(url => { if(url !== 'error' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
+    upscaleCache.forEach(url => { if(url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
     upscaleCache.clear();
 
     files = fileList.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
@@ -1833,12 +2308,14 @@ function processFileList(fileList, title) {
 }
 
 function switchToGrid() {
+    pointers =[]; isPanning = false; isDragging = false; isGridSwiping = false; isGridPulling = false; initialDistance = 0;
     viewMode = 'GRID';
     dom.body.classList.remove('ui-hidden');
     dom.gridArea.style.display = 'grid';
     dom.viewerArea.style.display = 'none';
     dom.btnGrid.style.display = 'none';
     dom.btnInfo.style.display = 'none';
+    dom.btnSave.style.display = 'none';
     
     lazyThumbnailObserver.disconnect();
     dom.gridArea.innerHTML = '';
@@ -1900,7 +2377,7 @@ function switchToGrid() {
         clearBtn.style.right = '4px';
         clearBtn.style.background = 'transparent';
         clearBtn.style.border = 'none';
-        clearBtn.style.color = 'var(--text-secondary)';
+        clearBtn.color = 'var(--text-secondary)';
         clearBtn.style.padding = '4px';
         clearBtn.style.cursor = 'pointer';
         clearBtn.style.opacity = folderFilterText ? '1' : '0';
@@ -1995,7 +2472,7 @@ function switchToGrid() {
             
             folderItem.dataset.search = folder.name.toLowerCase(); 
             
-            folderItem.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> <span>${folder.name}</span>`;
+            folderItem.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> <span>${escapeHtml(folder.name)}</span>`;
             folderItem.addEventListener('click', async () => {
                 if (dirStack.length > 0) {
                     dirStack[dirStack.length - 1].scrollTop = dom.gridArea.scrollTop;
@@ -2047,6 +2524,19 @@ let gridSwipeStartX = 0;
 let gridSwipeStartY = 0;
 let isGridSwiping = false;
 
+let gridTicking = false;
+function updateGridUI() {
+    if (isGridSwiping && dirStack.length > 1 && !isGridPulling) {
+        const dx = pointers[0]?.clientX - gridSwipeStartX || 0;
+        if (dx > 0) dom.gridArea.style.transform = `translateX(${dx}px)`;
+    } else if (isGridPulling) {
+        dom.gridArea.style.transform = `translateY(${gridPtrDistance}px)`;
+        dom.ptrIndicator.style.opacity = Math.min(gridPtrDistance / GRID_PTR_THRESHOLD, 1);
+        dom.ptrIndicator.style.transform = `translateX(-50%) rotate(${gridPtrDistance * 2}deg)`;
+    }
+    gridTicking = false;
+}
+
 dom.gridArea.addEventListener('pointerdown', (e) => {
     if (viewMode === 'GRID') {
         if (dom.gridArea.scrollTop <= 0) {
@@ -2061,11 +2551,15 @@ dom.gridArea.addEventListener('pointerdown', (e) => {
             dom.gridArea.style.transition = 'none';
             try { e.target.setPointerCapture(e.pointerId); } catch(err) {}
         }
+        pointers[0] = e;
     }
 });
 
 dom.gridArea.addEventListener('pointermove', (e) => {
-    if (viewMode === 'GRID' && isGridSwiping && dirStack.length > 1) {
+    if (viewMode !== 'GRID') return;
+    pointers[0] = e;
+
+    if (isGridSwiping && dirStack.length > 1) {
         const dx = e.clientX - gridSwipeStartX;
         const dy = Math.abs(e.clientY - gridSwipeStartY);
         
@@ -2076,11 +2570,15 @@ dom.gridArea.addEventListener('pointermove', (e) => {
                 dom.gridArea.classList.remove('pulling');
                 dom.ptrIndicator.style.opacity = 0;
                 dom.ptrIndicator.style.transform = 'translateX(-50%) rotate(0deg)';
+                dom.gridArea.style.transform = '';
             }
         }
 
         if (dx > 0 && !isGridPulling) {
-            dom.gridArea.style.transform = `translateX(${dx}px)`;
+            if (!gridTicking) {
+                requestAnimationFrame(updateGridUI);
+                gridTicking = true;
+            }
             return;
         }
     }
@@ -2094,14 +2592,15 @@ dom.gridArea.addEventListener('pointermove', (e) => {
             dom.ptrIndicator.style.display = 'block';
         }
         gridPtrDistance = dy * 0.4; 
-        dom.gridArea.style.transform = `translateY(${gridPtrDistance}px)`;
-        dom.ptrIndicator.style.opacity = Math.min(gridPtrDistance / GRID_PTR_THRESHOLD, 1);
-        dom.ptrIndicator.style.transform = `translateX(-50%) rotate(${gridPtrDistance * 2}deg)`;
-        
+        if (!gridTicking) {
+            requestAnimationFrame(updateGridUI);
+            gridTicking = true;
+        }
         if (e.cancelable) e.preventDefault();
     } else if (dy < 0) {
         isGridPulling = false;
         dom.gridArea.classList.remove('pulling');
+        dom.gridArea.style.transform = '';
     }
 }, { passive: false });
 
@@ -2125,6 +2624,8 @@ const endGridPull = async (e) => {
         dom.gridArea.style.transition = 'transform 0.3s ease-out';
         
         if (dx > 70) {
+            isGridPulling = false;
+            dom.gridArea.classList.remove('pulling');
             dom.gridArea.style.transform = `translateX(100vw)`;
             setTimeout(async () => {
                 dirStack.pop();
@@ -2198,18 +2699,20 @@ dom.gridArea.addEventListener('pointercancel', endGridPull);
 dom.gridArea.addEventListener('pointerleave', endGridPull);
 
 function switchToViewer() {
+    pointers =[]; isPanning = false; isDragging = false; isGridSwiping = false; isGridPulling = false; initialDistance = 0;
     viewMode = 'VIEWER';
     dom.gridArea.style.display = 'none';
     dom.viewerArea.style.display = 'block';
-    dom.btnGrid.style.display = 'flex';
-    dom.btnInfo.style.display = 'flex';
+    dom.btnGrid.style.display = 'block';
+    dom.btnInfo.style.display = 'block';
+    dom.btnSave.style.display = 'block';
     dom.body.classList.add('ui-hidden');
     renderViewer();
 }
 
 function getSpreadGroup(index) {
     if (index < 0 || index >= files.length) return[];
-    if (layoutMode === 'SINGLE') return[index];
+    if (layoutMode === 'SINGLE') return [index];
 
     if (firstPageCover && index === 0) return[0];
 
@@ -2235,7 +2738,7 @@ function updateInfoPanel() {
     if (files.length === 0 || viewMode !== 'VIEWER') return;
 
     const rawGroup = getSpreadGroup(currentIndex);
-    let indices =[...rawGroup];
+    let indices = [...rawGroup];
     if (layoutMode === 'SPREAD' && indices.length === 2 && readDir === 'RTL') {
         indices.reverse();
     }
@@ -2249,7 +2752,7 @@ function updateInfoPanel() {
             html += `<div class="panel-title">${i === 0 ? 'LEFT PAGE' : 'RIGHT PAGE'}</div>`;
         }
         
-        html += `<div class="info-row"><span class="info-label">FILENAME</span><span class="info-value">${f.name}</span></div>
+        html += `<div class="info-row"><span class="info-label">FILENAME</span><span class="info-value">${escapeHtml(f.name)}</span></div>
                  <div class="info-row"><span class="info-label">SIZE</span><span class="info-value">${sizeMB} MB</span></div>
                  <div class="info-row"><span class="info-label">INDEX</span><span class="info-value">${idx + 1} / ${files.length}</span></div>`;
         
@@ -2268,14 +2771,15 @@ function populateSlot(slot, targetIndex) {
     }
     
     const rawGroup = getSpreadGroup(targetIndex);
-    let indices =[...rawGroup];
+    let indices = [...rawGroup];
 
     if (layoutMode === 'SPREAD' && indices.length === 2) {
         if (readDir === 'RTL') indices.reverse();
     }
 
     let actualMode = upscaleMode;
-    let fsrRatio = (actualMode !== 'BILINEAR' && actualMode !== 'OFF') ? 2.0 : 1;
+    let isBilinear = actualMode === 'BILINEAR';
+    let originalTargetRatio = (isHighMemMode && is4xEnabled && !isBilinear && actualMode !== 'ADPTV_SHOGA') ? 4.0 : (isBilinear ? 1.0 : 2.0);
 
     const imgs = slot.querySelectorAll('img:not(.crossfade-clone)');
     if (imgs.length !== indices.length) {
@@ -2283,8 +2787,41 @@ function populateSlot(slot, targetIndex) {
         indices.forEach((idx, i) => {
             const img = document.createElement('img');
             const url = getFileUrl(idx);
-            const cacheKey = url + '_' + actualMode + '_' + fsrRatio;
-            const cachedUrl = upscaleCache.get(cacheKey);
+            
+            let checkRatio = originalTargetRatio;
+            if (actualMode === 'ADPTV_SHOGA' && files[idx] && files[idx].nw) {
+                let displayW = window.innerWidth * currentZoom;
+                let dRatio = displayW / files[idx].nw;
+                checkRatio = Math.max(1.0, Math.ceil(dRatio * 10) / 10);
+                const maxArea = getDynamicMaxArea();
+                while ((files[idx].nw * checkRatio * files[idx].nh * checkRatio > maxArea || files[idx].nw * checkRatio > 16384 || files[idx].nh * checkRatio > 16384) && checkRatio > 1.0) {
+                    checkRatio = Math.max(1.0, checkRatio - 0.1);
+                }
+                checkRatio = Math.round(checkRatio * 10) / 10;
+            } else if (originalTargetRatio === 4.0 && files[idx] && files[idx].nw) {
+                if (files[idx].nw * 4.0 > 16384 || files[idx].nh * 4.0 > 16384) {
+                    checkRatio = 2.0;
+                }
+            }
+
+            let cacheKey = url + '_' + actualMode + '_' + checkRatio;
+            let cachedUrl = upscaleCache.get(cacheKey);
+            let bestCachedRatio = -1;
+
+            for (let[key, cacheVal] of upscaleCache.entries()) {
+                if (key.startsWith(url + '_' + actualMode + '_')) {
+                    let cachedRatio = parseFloat(key.split('_').pop());
+                    if (!isNaN(cachedRatio) && cachedRatio >= checkRatio) {
+                        if (cacheVal !== 'error' && cacheVal !== 'skipped' && cacheVal !== 'processing') {
+                            if (bestCachedRatio === -1 || cachedRatio < bestCachedRatio) {
+                                cacheKey = key;
+                                bestCachedRatio = cachedRatio;
+                                cachedUrl = cacheVal;
+                            }
+                        }
+                    }
+                }
+            }
 
             if (layoutMode === 'SPREAD' && indices.length === 2) {
                 img.className = i === 0 ? 'spread-left' : 'spread-right';
@@ -2295,18 +2832,23 @@ function populateSlot(slot, targetIndex) {
             img.dataset.fileIndex = idx;
             img.dataset.originalUrl = url;
             
-            if (upscaleMode !== 'OFF' && cachedUrl && cachedUrl !== 'error') {
+            if (upscaleMode !== 'OFF' && cachedUrl && cachedUrl !== 'error' && cachedUrl !== 'processing' && cachedUrl !== 'skipped') {
                 img.src = cachedUrl;
-                img.dataset.fsrAppliedTier = cacheKey;
+                img.dataset.upscaleAppliedTier = cacheKey;
             } else {
                 img.src = url;
-                if (upscaleMode !== 'OFF') img.dataset.fsrAppliedTier = 'NATIVE_BILINEAR';
+                if (upscaleMode !== 'OFF') img.dataset.upscaleAppliedTier = 'NATIVE_BILINEAR';
             }
 
             img.onload = function() {
                 if (!this.dataset.origNw || this.dataset.originalUrl === this.src) {
                     this.dataset.origNw = this.naturalWidth;
                     this.dataset.origNh = this.naturalHeight;
+                    const currentIdx = parseInt(this.dataset.fileIndex, 10);
+                    if (!isNaN(currentIdx) && files[currentIdx] && !files[currentIdx].nw) {
+                        files[currentIdx].nw = this.naturalWidth;
+                        files[currentIdx].nh = this.naturalHeight;
+                    }
                     this.style.aspectRatio = `${this.naturalWidth} / ${this.naturalHeight}`;
                     this.style.setProperty('--orig-w', `${this.naturalWidth}px`);
                     this.style.setProperty('--orig-h', `${this.naturalHeight}px`);
@@ -2314,17 +2856,18 @@ function populateSlot(slot, targetIndex) {
             };
             img.onerror = function() {
                 if (this.src && this.src !== this.dataset.originalUrl) {
-                    const failedTier = this.dataset.fsrAppliedTier || this.dataset.fsrProcessingKey;
+                    const failedTier = this.dataset.upscaleAppliedTier || this.dataset.upscaleProcessingKey;
                     if (failedTier && upscaleCache.has(failedTier)) {
                         upscaleCache.delete(failedTier);
                     }
                     this.src = this.dataset.originalUrl;
-                    delete this.dataset.fsrAppliedTier;
-                    delete this.dataset.fsrProcessingKey;
+                    delete this.dataset.upscaleAppliedTier;
+                    delete this.dataset.upscaleProcessingKey;
+                    delete this.dataset.pendingSwapUrl;
                     if (upscaleMode !== 'OFF') {
-                        this.dataset.fsrAppliedTier = 'NATIVE_BILINEAR';
-                        clearTimeout(fsrDebounceTimer);
-                        fsrDebounceTimer = setTimeout(applyFSROverlays, 100);
+                        this.dataset.upscaleAppliedTier = 'NATIVE_BILINEAR';
+                        clearTimeout(upscaleDebounceTimer);
+                        upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 100);
                     }
                 }
             };
@@ -2334,8 +2877,40 @@ function populateSlot(slot, targetIndex) {
         indices.forEach((idx, i) => {
             const url = getFileUrl(idx);
             if (imgs[i].dataset.originalUrl !== url) {
-                const cacheKey = url + '_' + actualMode + '_' + fsrRatio;
-                const cachedUrl = upscaleCache.get(cacheKey);
+                let checkRatio = originalTargetRatio;
+                if (actualMode === 'ADPTV_SHOGA' && files[idx] && files[idx].nw) {
+                    let displayW = window.innerWidth * currentZoom;
+                    let dRatio = displayW / files[idx].nw;
+                    checkRatio = Math.max(1.0, Math.ceil(dRatio * 10) / 10);
+                    const maxArea = getDynamicMaxArea();
+                    while ((files[idx].nw * checkRatio * files[idx].nh * checkRatio > maxArea || files[idx].nw * checkRatio > 16384 || files[idx].nh * checkRatio > 16384) && checkRatio > 1.0) {
+                        checkRatio = Math.max(1.0, checkRatio - 0.1);
+                    }
+                    checkRatio = Math.round(checkRatio * 10) / 10;
+                } else if (originalTargetRatio === 4.0 && files[idx] && files[idx].nw) {
+                    if (files[idx].nw * 4.0 > 16384 || files[idx].nh * 4.0 > 16384) {
+                        checkRatio = 2.0;
+                    }
+                }
+
+                let cacheKey = url + '_' + actualMode + '_' + checkRatio;
+                let cachedUrl = upscaleCache.get(cacheKey);
+                let bestCachedRatio = -1;
+
+                for (let[key, cacheVal] of upscaleCache.entries()) {
+                    if (key.startsWith(url + '_' + actualMode + '_')) {
+                        let cachedRatio = parseFloat(key.split('_').pop());
+                        if (!isNaN(cachedRatio) && cachedRatio >= checkRatio) {
+                            if (cacheVal !== 'error' && cacheVal !== 'skipped' && cacheVal !== 'processing') {
+                                if (bestCachedRatio === -1 || cachedRatio < bestCachedRatio) {
+                                    cacheKey = key;
+                                    bestCachedRatio = cachedRatio;
+                                    cachedUrl = cacheVal;
+                                }
+                            }
+                        }
+                    }
+                }
 
                 if (layoutMode === 'SPREAD' && indices.length === 2) {
                     imgs[i].className = i === 0 ? 'spread-left' : 'spread-right';
@@ -2346,22 +2921,23 @@ function populateSlot(slot, targetIndex) {
                 imgs[i].dataset.fileIndex = idx;
                 imgs[i].dataset.originalUrl = url;
                 
-                if (upscaleMode !== 'OFF' && cachedUrl && cachedUrl !== 'error') {
+                if (upscaleMode !== 'OFF' && cachedUrl && cachedUrl !== 'error' && cachedUrl !== 'processing' && cachedUrl !== 'skipped') {
                     imgs[i].src = cachedUrl;
-                    imgs[i].dataset.fsrAppliedTier = cacheKey;
+                    imgs[i].dataset.upscaleAppliedTier = cacheKey;
                 } else {
                     imgs[i].src = url;
                     if (upscaleMode !== 'OFF') {
-                        imgs[i].dataset.fsrAppliedTier = 'NATIVE_BILINEAR';
+                        imgs[i].dataset.upscaleAppliedTier = 'NATIVE_BILINEAR';
                     } else {
-                        delete imgs[i].dataset.fsrAppliedTier;
+                        delete imgs[i].dataset.upscaleAppliedTier;
                     }
                 }
                 
                 delete imgs[i].dataset.origNw;
                 delete imgs[i].dataset.origNh;
-                delete imgs[i].dataset.fsrProcessingKey;
-                delete imgs[i].pendingFsrSwap;
+                delete imgs[i].dataset.upscaleProcessingKey;
+                delete imgs[i].dataset.pendingSwapUrl;
+                delete imgs[i].pendingUpscaleSwap;
             }
         });
     }
@@ -2394,8 +2970,8 @@ function renderViewer() {
     resetTransform(false);
     
     if (!dom.body.classList.contains('animating')) {
-        clearTimeout(fsrDebounceTimer);
-        fsrDebounceTimer = setTimeout(applyFSROverlays, 300);
+        clearTimeout(upscaleDebounceTimer);
+        upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 300);
     }
 }
 
@@ -2412,10 +2988,16 @@ function resetTransform(smooth = true) {
     }
 }
 
+let isViewerTicking = false;
 function applyContentTransform() {
-    dom.viewerContent.style.transform = `translate(${Math.round(panX)}px, ${Math.round(panY)}px) scale(${currentZoom})`;
-    clearTimeout(fsrDebounceTimer);
-    fsrDebounceTimer = setTimeout(applyFSROverlays, 300);
+    if (isViewerTicking) return;
+    isViewerTicking = true;
+    requestAnimationFrame(() => {
+        dom.viewerContent.style.transform = `translate(${Math.round(panX)}px, ${Math.round(panY)}px) scale(${currentZoom})`;
+        clearTimeout(upscaleDebounceTimer);
+        upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 300);
+        isViewerTicking = false;
+    });
 }
 
 function cleanCaches() {
@@ -2431,7 +3013,8 @@ function cleanCaches() {
     for (const[key, url] of upscaleCache.entries()) {
         const origUrl = key.split('_')[0];
         if (!activeUrls.has(origUrl)) {
-            if (url !== 'error' && url.startsWith('blob:')) URL.revokeObjectURL(url);
+            if (url === 'processing') continue;
+            if (url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url);
             upscaleCache.delete(key);
         }
     }
@@ -2534,7 +3117,7 @@ dom.viewerArea.addEventListener('wheel', (e) => {
     dom.body.classList.add('ui-hidden');
     
     const zoomFactor = -e.deltaY * 0.001;
-    const newZoom = Math.max(0.1, Math.min(currentZoom * Math.exp(zoomFactor), 10));
+    const newZoom = Math.max(0.1, Math.min(currentZoom * Math.exp(zoomFactor), maxZoomLimit));
     
     const cx = e.clientX - window.innerWidth / 2;
     const cy = e.clientY - window.innerHeight / 2;
@@ -2545,6 +3128,8 @@ dom.viewerArea.addEventListener('wheel', (e) => {
     currentZoom = newZoom;
     applyContentTransform();
 }, { passive: false });
+
+let vW = 0, vH = 0, cW = 0, cH = 0;
 
 dom.viewerArea.addEventListener('pointerdown', (e) => {
     if (viewMode !== 'VIEWER' || e.target.closest('#top-bar') || e.target.closest('.panel') || e.target.closest('#bookmarks-panel')) return;
@@ -2572,6 +3157,14 @@ dom.viewerArea.addEventListener('pointerdown', (e) => {
     if (pointers.length === 1) {
         startX = e.clientX; startY = e.clientY;
         initialPanX = panX; initialPanY = panY;
+        
+        vW = window.innerWidth;
+        vH = window.innerHeight;
+        cW = 0; cH = 0;
+        dom.viewerContent.querySelectorAll('img:not(.crossfade-clone)').forEach(img => {
+            cW += img.offsetWidth;
+            cH = Math.max(cH, img.offsetHeight);
+        });
     }
 });
 
@@ -2579,6 +3172,7 @@ dom.viewerArea.addEventListener('pointermove', (e) => {
     if (!isPanning || navTimeout) return;
     const idx = pointers.findIndex(p => p.pointerId === e.pointerId);
     if (idx !== -1) pointers[idx] = e;
+    else return;
 
     if (pointers.length === 1) {
         const dx = e.clientX - startX;
@@ -2588,16 +3182,11 @@ dom.viewerArea.addEventListener('pointermove', (e) => {
             isDragging = true;
             dom.body.classList.add('ui-hidden');
             
-            let totalW = 0, maxH = 0;
-            dom.viewerContent.querySelectorAll('img:not(.crossfade-clone)').forEach(img => {
-                totalW += img.offsetWidth;
-                maxH = Math.max(maxH, img.offsetHeight);
-            });
-            totalW *= currentZoom;
-            maxH *= currentZoom;
+            const totalW = cW * currentZoom;
+            const maxH = cH * currentZoom;
             
-            const overflowX = totalW > window.innerWidth;
-            const overflowY = maxH > window.innerHeight;
+            const overflowX = totalW > vW;
+            const overflowY = maxH > vH;
             
             if (currentZoom === 1 && !overflowX && !overflowY) {
                 axisLocked = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
@@ -2623,16 +3212,11 @@ dom.viewerArea.addEventListener('pointermove', (e) => {
                 panY = dy * 0.2; 
                 applyContentTransform();
             } else {
-                let totalW = 0, maxH = 0;
-                dom.viewerContent.querySelectorAll('img:not(.crossfade-clone)').forEach(img => {
-                    totalW += img.offsetWidth;
-                    maxH = Math.max(maxH, img.offsetHeight);
-                });
-                totalW *= currentZoom;
-                maxH *= currentZoom;
+                const totalW = cW * currentZoom;
+                const maxH = cH * currentZoom;
                 
-                let maxPx = Math.max(0, (totalW - window.innerWidth) / 2);
-                let maxPy = Math.max(0, (maxH - window.innerHeight) / 2);
+                let maxPx = Math.max(0, (totalW - vW) / 2);
+                let maxPy = Math.max(0, (maxH - vH) / 2);
                 
                 let targetPanX = initialPanX + dx;
                 let targetPanY = initialPanY + dy;
@@ -2673,9 +3257,9 @@ dom.viewerArea.addEventListener('pointermove', (e) => {
             initialPanX = panX; initialPanY = panY;
         } else {
             const scale = dist / initialDistance;
-            const newZoom = Math.max(0.1, Math.min(initialZoom * scale, 10));
-            const cx = center.x - window.innerWidth / 2;
-            const cy = center.y - window.innerHeight / 2;
+            const newZoom = Math.max(0.1, Math.min(initialZoom * scale, maxZoomLimit));
+            const cx = center.x - vW / 2;
+            const cy = center.y - vH / 2;
             
             panX = cx - (cx - initialPanX - (center.x - startX)) * (newZoom / initialZoom);
             panY = cy - (cy - initialPanY - (center.y - startY)) * (newZoom / initialZoom);
@@ -2710,33 +3294,28 @@ function handlePointerEnd(e) {
                 let targetIdx = logicalDir === 'next' ? nextIndex : prevIndex;
                 let isBlocked = isSingleFileMode || targetIdx < 0 || targetIdx >= files.length;
 
-                if (Math.abs(dx) > window.innerWidth * 0.15 && !isBlocked) {
+                if (Math.abs(dx) > vW * 0.15 && !isBlocked) {
                     navigateLogical(logicalDir);
                 } else resetTransform(true);
             } else if (axisLocked === 'y') {
-                if (dy > window.innerHeight * 0.15) {
+                if (dy > vH * 0.15) {
                     switchToGrid();
                 } else {
                     panY = 0; applyContentTransform();
                 }
             } else {
-                let totalW = 0, maxH = 0;
-                dom.viewerContent.querySelectorAll('img:not(.crossfade-clone)').forEach(img => {
-                    totalW += img.offsetWidth;
-                    maxH = Math.max(maxH, img.offsetHeight);
-                });
-                totalW *= currentZoom;
-                maxH *= currentZoom;
+                const totalW = cW * currentZoom;
+                const maxH = cH * currentZoom;
                 
-                let maxPx = Math.max(0, (totalW - window.innerWidth) / 2);
-                let maxPy = Math.max(0, (maxH - window.innerHeight) / 2);
+                let maxPx = Math.max(0, (totalW - vW) / 2);
+                let maxPy = Math.max(0, (maxH - vH) / 2);
                 
                 let rawPanX = initialPanX + dx;
                 let overscrollX = 0;
                 if (rawPanX > maxPx) overscrollX = rawPanX - maxPx;
                 else if (rawPanX < -maxPx) overscrollX = rawPanX - (-maxPx);
                 
-                if (Math.abs(overscrollX) > window.innerWidth * 0.15) {
+                if (Math.abs(overscrollX) > vW * 0.15) {
                     const physicalDir = overscrollX > 0 ? 'prev' : 'next';
                     const logicalDir = readDir === 'LTR' ? physicalDir : (physicalDir === 'next' ? 'prev' : 'next');
                     navigateLogical(logicalDir);
@@ -2750,25 +3329,25 @@ function handlePointerEnd(e) {
                 }
             }
         } else {
-            const clickX = e.clientX, screenW = window.innerWidth;
+            const clickX = e.clientX;
             clearTimeout(singleTapTimeout);
             singleTapTimeout = setTimeout(() => {
                 if (currentZoom === 1) {
-                    if (clickX < screenW * 0.15) navigateLogical(readDir === 'LTR' ? 'prev' : 'next');
-                    else if (clickX > screenW * 0.85) navigateLogical(readDir === 'LTR' ? 'next' : 'prev');
+                    if (clickX < vW * 0.15) navigateLogical(readDir === 'LTR' ? 'prev' : 'next');
+                    else if (clickX > vW * 0.85) navigateLogical(readDir === 'LTR' ? 'next' : 'prev');
                     else dom.body.classList.toggle('ui-hidden');
                 } else dom.body.classList.toggle('ui-hidden');
             }, 200);
         }
         isPanning = false; isDragging = false;
         dom.viewerContent.querySelectorAll('img').forEach(img => {
-            if (img.pendingFsrSwap) {
-                img.pendingFsrSwap();
-                delete img.pendingFsrSwap;
+            if (img.pendingUpscaleSwap) {
+                img.pendingUpscaleSwap();
+                delete img.pendingUpscaleSwap;
             }
         });
-        clearTimeout(fsrDebounceTimer);
-        fsrDebounceTimer = setTimeout(applyFSROverlays, 300);
+        clearTimeout(upscaleDebounceTimer);
+        upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 300);
     } else {
         startX = pointers[0].clientX; startY = pointers[0].clientY;
         initialPanX = panX; initialPanY = panY;
@@ -2796,7 +3375,7 @@ window.addEventListener('keydown', (e) => {
 
         if (e.key === '=' || e.key === '+') {
             dom.body.classList.add('ui-hidden');
-            const newZoom = Math.min(currentZoom * 1.25, 10);
+            const newZoom = Math.min(currentZoom * 1.25, maxZoomLimit);
             panX = panX * (newZoom / currentZoom);
             panY = panY * (newZoom / currentZoom);
             currentZoom = newZoom;
