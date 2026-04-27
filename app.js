@@ -142,10 +142,15 @@ async function saveBookmarkToDB(bookmark) {
     try {
         const db = await initDB();
         return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_BOOKMARKS, 'readwrite');
-            tx.objectStore(STORE_BOOKMARKS).put(bookmark);
-            tx.oncomplete = () => { db.close(); resolve(); };
-            tx.onerror = (e) => { db.close(); reject(e.target.error); };
+            try {
+                const tx = db.transaction(STORE_BOOKMARKS, 'readwrite');
+                tx.objectStore(STORE_BOOKMARKS).put(bookmark);
+                tx.oncomplete = () => { db.close(); resolve(); };
+                tx.onerror = (e) => { db.close(); reject(e.target.error); };
+            } catch (err) {
+                db.close();
+                reject(err);
+            }
         });
     } catch(e) { throw e; }
 }
@@ -154,10 +159,15 @@ async function loadBookmarksFromDB() {
     try {
         const db = await initDB();
         return new Promise((resolve) => {
-            const tx = db.transaction(STORE_BOOKMARKS, 'readonly');
-            const req = tx.objectStore(STORE_BOOKMARKS).getAll();
-            req.onsuccess = () => { db.close(); resolve(req.result ||[]); };
-            req.onerror = () => { db.close(); resolve([]); };
+            try {
+                const tx = db.transaction(STORE_BOOKMARKS, 'readonly');
+                const req = tx.objectStore(STORE_BOOKMARKS).getAll();
+                req.onsuccess = () => { db.close(); resolve(req.result ||[]); };
+                req.onerror = () => { db.close(); resolve([]); };
+            } catch (err) {
+                db.close();
+                resolve([]);
+            }
         });
     } catch (e) {
         return[];
@@ -168,10 +178,15 @@ async function deleteBookmarkFromDB(id) {
     try {
         const db = await initDB();
         return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_BOOKMARKS, 'readwrite');
-            tx.objectStore(STORE_BOOKMARKS).delete(id);
-            tx.oncomplete = () => { db.close(); resolve(); };
-            tx.onerror = (e) => { db.close(); reject(e.target.error); };
+            try {
+                const tx = db.transaction(STORE_BOOKMARKS, 'readwrite');
+                tx.objectStore(STORE_BOOKMARKS).delete(id);
+                tx.oncomplete = () => { db.close(); resolve(); };
+                tx.onerror = (e) => { db.close(); reject(e.target.error); };
+            } catch (err) {
+                db.close();
+                reject(err);
+            }
         });
     } catch(e) { throw e; }
 }
@@ -181,18 +196,29 @@ async function saveDirHandle(handle) {
     try {
         const db = await initDB();
         return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_HANDLES, 'readwrite');
-            const store = tx.objectStore(STORE_HANDLES);
-            const req = store.get('recent-handles');
-            req.onsuccess = () => {
-                let handles = req.result ||[];
-                handles = handles.filter(h => h.name !== handle.name);
-                handles.unshift({ name: handle.name, handle: handle, ts: Date.now() });
-                handles = handles.slice(0, 5); 
-                store.put(handles, 'recent-handles');
-            };
-            tx.oncomplete = () => { db.close(); resolve(); };
-            tx.onerror = (e) => { db.close(); reject(e.target.error); };
+            try {
+                const tx = db.transaction(STORE_HANDLES, 'readwrite');
+                const store = tx.objectStore(STORE_HANDLES);
+                const req = store.get('recent-handles');
+                req.onsuccess = () => {
+                    try {
+                        let handles = req.result ||[];
+                        handles = handles.filter(h => h.name !== handle.name);
+                        handles.unshift({ name: handle.name, handle: handle, ts: Date.now() });
+                        handles = handles.slice(0, 5); 
+                        store.put(handles, 'recent-handles');
+                    } catch (e) {
+                        try { tx.abort(); } catch (e2) {}
+                        db.close();
+                        reject(e);
+                    }
+                };
+                tx.oncomplete = () => { db.close(); resolve(); };
+                tx.onerror = (e) => { db.close(); reject(e.target.error); };
+            } catch (err) {
+                db.close();
+                reject(err);
+            }
         });
     } catch (err) {}
 }
@@ -201,10 +227,15 @@ async function loadDirHandles() {
     try {
         const db = await initDB();
         return new Promise((resolve) => {
-            const tx = db.transaction(STORE_HANDLES, 'readonly');
-            const req = tx.objectStore(STORE_HANDLES).get('recent-handles');
-            req.onsuccess = () => { db.close(); resolve(req.result ||[]); };
-            req.onerror = () => { db.close(); resolve([]); };
+            try {
+                const tx = db.transaction(STORE_HANDLES, 'readonly');
+                const req = tx.objectStore(STORE_HANDLES).get('recent-handles');
+                req.onsuccess = () => { db.close(); resolve(req.result ||[]); };
+                req.onerror = () => { db.close(); resolve([]); };
+            } catch (err) {
+                db.close();
+                resolve([]);
+            }
         });
     } catch (err) { return[]; }
 }
@@ -213,10 +244,15 @@ async function clearDirHandles() {
     try {
         const db = await initDB();
         return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_HANDLES, 'readwrite');
-            tx.objectStore(STORE_HANDLES).delete('recent-handles');
-            tx.oncomplete = () => { db.close(); resolve(); };
-            tx.onerror = (e) => { db.close(); reject(e.target.error); };
+            try {
+                const tx = db.transaction(STORE_HANDLES, 'readwrite');
+                tx.objectStore(STORE_HANDLES).delete('recent-handles');
+                tx.oncomplete = () => { db.close(); resolve(); };
+                tx.onerror = (e) => { db.close(); reject(e.target.error); };
+            } catch (err) {
+                db.close();
+                reject(err);
+            }
         });
     } catch(e) {}
 }
@@ -639,7 +675,7 @@ async function restoreBookmark(id) {
     await new Promise(resolve => setTimeout(resolve, 350));
     dom.bookmarksList.style.pointerEvents = 'auto';
 
-    const restoredFiles =[];
+    let restoredFiles =[];
     
     if (currentTitle === bk.title) {
         const nameMap = new Map();
@@ -717,20 +753,30 @@ async function restoreBookmark(id) {
         }
 
         if (!autoRestored) {
-            pendingBookmarkRestoreId = id;
-            const idleTitle = dom.idleScreen.querySelector('h1');
-            const idleDesc = dom.idleScreen.querySelector('p');
-            if (idleTitle) idleTitle.textContent = 'RESTORE BOOKMARK';
-            if (idleDesc) idleDesc.textContent = `Please select the folder:[ ${bk.title} ]`;
-            closeAllPanels();
-            switchToIdle();
-            
-            setTimeout(() => {
-                if (window.showDirectoryPicker) handleDirectoryPicker();
-                else dom.fallbackInputDir.click();
-            }, 100);
-            return;
+            if (files.length > 0) {
+                restoredFiles = files;
+            } else {
+                pendingBookmarkRestoreId = id;
+                const idleTitle = dom.idleScreen.querySelector('h1');
+                const idleDesc = dom.idleScreen.querySelector('p');
+                if (idleTitle) idleTitle.textContent = 'RESTORE BOOKMARK';
+                if (idleDesc) idleDesc.textContent = `Please select the folder:[ ${bk.title} ]`;
+                closeAllPanels();
+                switchToIdle();
+                
+                setTimeout(() => {
+                    if (window.showDirectoryPicker) handleDirectoryPicker();
+                    else dom.fallbackInputDir.click();
+                }, 100);
+                return;
+            }
         }
+    }
+    
+    if (restoredFiles.length === 0) {
+        pendingBookmarkRestoreId = null;
+        switchToIdle();
+        return;
     }
     
     pendingBookmarkRestoreId = null;
@@ -2212,6 +2258,11 @@ function applyUpscaleOverlays() {
                     }
 
                     if (finalUrl) {
+                        if (img.dataset.upscaleProcessingKey !== cacheKey || viewMode !== 'VIEWER') {
+                            URL.revokeObjectURL(finalUrl);
+                            hideUpscaleIndicator();
+                            return;
+                        }
                         if (upscaleCache.size >= 64) {
                             for (const[k, v] of upscaleCache.entries()) {
                                 if (v !== 'processing') {
@@ -2227,6 +2278,10 @@ function applyUpscaleOverlays() {
                         hideUpscaleIndicator();
                     } else {
                         console.error('Canvas toBlob failed for:', actualCacheKey);
+                        if (img.dataset.upscaleProcessingKey !== cacheKey || viewMode !== 'VIEWER') {
+                            hideUpscaleIndicator();
+                            return;
+                        }
                         upscaleCache.set(cacheKey, 'error');
                         if (fallbackActive) upscaleCache.set(actualCacheKey, 'error');
                         executeCrossfadeSwap(img, img.dataset.originalUrl, 'NATIVE_BILINEAR');
@@ -2234,6 +2289,10 @@ function applyUpscaleOverlays() {
                     }
                 } catch (e) {
                     console.error('Upscaling process failed:', e);
+                    if (img.dataset.upscaleProcessingKey !== cacheKey || viewMode !== 'VIEWER') {
+                        hideUpscaleIndicator();
+                        return;
+                    }
                     upscaleCache.set(cacheKey, 'error');
                     if (fallbackActive) upscaleCache.set(actualCacheKey, 'error');
                     executeCrossfadeSwap(img, img.dataset.originalUrl, 'NATIVE_BILINEAR');
@@ -2242,6 +2301,10 @@ function applyUpscaleOverlays() {
             };
             srcImg.onerror = (err) => {
                 console.error('Failed to load source image for upscaling:', img.dataset.originalUrl, err);
+                if (img.dataset.upscaleProcessingKey !== cacheKey || viewMode !== 'VIEWER') {
+                    hideUpscaleIndicator();
+                    return;
+                }
                 upscaleCache.set(cacheKey, 'error');
                 if (fallbackActive) upscaleCache.set(actualCacheKey, 'error');
                 executeCrossfadeSwap(img, img.dataset.originalUrl, 'NATIVE_BILINEAR');
@@ -3555,6 +3618,18 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     }
   });
 }
+
+let resizeDebounce = null;
+window.addEventListener('resize', () => {
+    if (viewMode === 'VIEWER') {
+        clearTimeout(resizeDebounce);
+        resizeDebounce = setTimeout(() => {
+            vW = window.innerWidth;
+            vH = window.innerHeight;
+            resetTransform(false);
+        }, 150);
+    }
+});
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
