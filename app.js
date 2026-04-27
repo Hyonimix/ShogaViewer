@@ -1942,15 +1942,12 @@ const executeCrossfadeSwap = (img, targetUrl, tierName) => {
         
         overlay.style.cssText = img.style.cssText;
         overlay.style.position = 'absolute';
-        
-        overlay.style.width = '100%';
-        overlay.style.height = '100%';
-        overlay.style.left = '50%';
-        overlay.style.top = '50%';
-        overlay.style.transform = 'translate(-50%, -50%)';
+        overlay.style.width = img.offsetWidth + 'px';
+        overlay.style.height = img.offsetHeight + 'px';
+        overlay.style.left = img.offsetLeft + 'px';
+        overlay.style.top = img.offsetTop + 'px';
         overlay.style.zIndex = '10';
         overlay.style.opacity = '0';
-        
         overlay.style.transition = 'opacity 1.5s ease-in-out';
         overlay.style.pointerEvents = 'none';
         overlay.style.objectFit = computedStyle.objectFit;
