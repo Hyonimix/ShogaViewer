@@ -431,10 +431,30 @@ async function generateHighPerfThumbnail(file, canvas) {
         const img = new Image();
         img.src = URL.createObjectURL(file);
         img.onload = () => {
+            if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+                img.onerror();
+                return;
+            }
             canvas.width = 300;
             canvas.height = 300 * (img.height / img.width);
             const ctx = canvas.getContext('2d', { alpha: false });
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            URL.revokeObjectURL(img.src);
+            canvas.classList.add('loaded');
+        };
+        img.onerror = () => {
+            file.isBroken = true;
+            canvas.width = 300;
+            canvas.height = 300;
+            const ctx = canvas.getContext('2d', { alpha: false });
+            ctx.fillStyle = '#1e1e1e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(100, 100); ctx.lineTo(200, 200);
+            ctx.moveTo(200, 100); ctx.lineTo(100, 200);
+            ctx.stroke();
             URL.revokeObjectURL(img.src);
             canvas.classList.add('loaded');
         };
@@ -1718,6 +1738,8 @@ function processNextPreload() {
         
         for (let idx of checkOrder) {
             if (idx >= 0 && idx < files.length) {
+                if (files[idx] && files[idx].isBroken) continue;
+                
                 const origUrl = getFileUrl(idx);
                 let checkRatio = (isHighMemMode && is4xEnabled && !isBilinear && actualMode !== 'ADPTV_SHOGA') ? 4.0 : (isBilinear ? 1.0 : 2.0);
                 
@@ -2065,7 +2087,7 @@ function applyUpscaleOverlays() {
 
     imgs.forEach(img => {
         const fIdx = parseInt(img.dataset.fileIndex);
-        if (isNaN(fIdx) || !files[fIdx]) return;
+        if (isNaN(fIdx) || !files[fIdx] || files[fIdx].isBroken) return;
         const fileObj = files[fIdx];
 
         let nw = fileObj.nw;
@@ -2841,10 +2863,38 @@ function populateSlot(slot, targetIndex) {
     let isBilinear = actualMode === 'BILINEAR';
     let originalTargetRatio = (isHighMemMode && is4xEnabled && !isBilinear && actualMode !== 'ADPTV_SHOGA') ? 4.0 : (isBilinear ? 1.0 : 2.0);
 
-    const imgs = slot.querySelectorAll('img:not(.crossfade-clone)');
-    if (imgs.length !== indices.length) {
+    const currentItems = Array.from(slot.children).filter(el => !el.classList.contains('crossfade-clone'));
+    let needsRebuild = currentItems.length !== indices.length;
+    if (!needsRebuild) {
+        indices.forEach((idx, i) => {
+            const isUIBroken = currentItems[i].classList.contains('broken-file-ui');
+            const isFileBroken = files[idx] && files[idx].isBroken;
+            if (isUIBroken !== !!isFileBroken) needsRebuild = true;
+        });
+    }
+
+    if (needsRebuild) {
         slot.replaceChildren();
         indices.forEach((idx, i) => {
+            if (files[idx] && files[idx].isBroken) {
+                const errDiv = document.createElement('div');
+                errDiv.className = 'broken-file-ui';
+                if (layoutMode === 'SPREAD' && indices.length === 2) {
+                    errDiv.classList.add(i === 0 ? 'spread-left' : 'spread-right');
+                }
+                errDiv.style.display = 'flex';
+                errDiv.style.flexDirection = 'column';
+                errDiv.style.alignItems = 'center';
+                errDiv.style.justifyContent = 'center';
+                errDiv.style.width = '100%';
+                errDiv.style.height = '100%';
+                errDiv.style.color = '#ef4444';
+                errDiv.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                errDiv.innerHTML = `<svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg><div style="margin-top:10px; font-size:0.8rem; font-weight:600; letter-spacing:1px;">IMAGE CORRUPTED</div>`;
+                slot.appendChild(errDiv);
+                return;
+            }
+
             const img = document.createElement('img');
             const url = getFileUrl(idx);
             
@@ -2901,6 +2951,10 @@ function populateSlot(slot, targetIndex) {
             }
 
             img.onload = function() {
+                if (this.naturalWidth === 0 || this.naturalHeight === 0) {
+                    this.onerror();
+                    return;
+                }
                 if (!this.dataset.origNw || this.dataset.originalUrl === this.src) {
                     this.dataset.origNw = this.naturalWidth;
                     this.dataset.origNh = this.naturalHeight;
@@ -2929,14 +2983,57 @@ function populateSlot(slot, targetIndex) {
                         clearTimeout(upscaleDebounceTimer);
                         upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 100);
                     }
+                } else {
+                    const fIdx = parseInt(this.dataset.fileIndex, 10);
+                    if (!isNaN(fIdx) && files[fIdx]) {
+                        files[fIdx].retryCount = (files[fIdx].retryCount || 0) + 1;
+                        if (files[fIdx].retryCount > 3) {
+                            files[fIdx].isBroken = true;
+                            const errDiv = document.createElement('div');
+                            errDiv.className = 'broken-file-ui' + (this.className ? ' ' + this.className : '');
+                            errDiv.style.display = 'flex';
+                            errDiv.style.flexDirection = 'column';
+                            errDiv.style.alignItems = 'center';
+                            errDiv.style.justifyContent = 'center';
+                            errDiv.style.width = '100%';
+                            errDiv.style.height = '100%';
+                            errDiv.style.color = '#ef4444';
+                            errDiv.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                            errDiv.innerHTML = `<svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg><div style="margin-top:10px; font-size:0.8rem; font-weight:600; letter-spacing:1px;">IMAGE CORRUPTED</div>`;
+                            if (this.parentNode) {
+                                this.parentNode.replaceChild(errDiv, this);
+                            }
+                        } else {
+                            const oldUrl = this.dataset.originalUrl;
+                            if (oldUrl) URL.revokeObjectURL(oldUrl);
+                            urlCache.delete(fIdx);
+                            
+                            for (let [k, v] of upscaleCache.entries()) {
+                                if (k.startsWith(oldUrl + '_')) {
+                                    if (v !== 'processing' && v !== 'error' && v !== 'skipped' && v.startsWith('blob:')) {
+                                        URL.revokeObjectURL(v);
+                                    }
+                                    upscaleCache.delete(k);
+                                }
+                            }
+                            
+                            const newUrl = URL.createObjectURL(files[fIdx]);
+                            urlCache.set(fIdx, newUrl);
+                            this.dataset.originalUrl = newUrl;
+                            this.src = newUrl;
+                        }
+                    }
                 }
             };
             slot.appendChild(img);
         });
     } else {
         indices.forEach((idx, i) => {
+            if (files[idx] && files[idx].isBroken) return; 
+
             const url = getFileUrl(idx);
-            if (imgs[i].dataset.originalUrl !== url) {
+            const img = currentItems[i];
+            if (img.dataset.originalUrl !== url) {
                 let checkRatio = originalTargetRatio;
                 if (actualMode === 'ADPTV_SHOGA' && files[idx] && files[idx].nw) {
                     let displayW = window.innerWidth * currentZoom;
@@ -2973,31 +3070,31 @@ function populateSlot(slot, targetIndex) {
                 }
 
                 if (layoutMode === 'SPREAD' && indices.length === 2) {
-                    imgs[i].className = i === 0 ? 'spread-left' : 'spread-right';
+                    img.className = i === 0 ? 'spread-left' : 'spread-right';
                 } else {
-                    imgs[i].className = '';
+                    img.className = '';
                 }
 
-                imgs[i].dataset.fileIndex = idx;
-                imgs[i].dataset.originalUrl = url;
+                img.dataset.fileIndex = idx;
+                img.dataset.originalUrl = url;
                 
                 if (upscaleMode !== 'OFF' && cachedUrl && cachedUrl !== 'error' && cachedUrl !== 'processing' && cachedUrl !== 'skipped') {
-                    imgs[i].src = cachedUrl;
-                    imgs[i].dataset.upscaleAppliedTier = cacheKey;
+                    img.src = cachedUrl;
+                    img.dataset.upscaleAppliedTier = cacheKey;
                 } else {
-                    imgs[i].src = url;
+                    img.src = url;
                     if (upscaleMode !== 'OFF') {
-                        imgs[i].dataset.upscaleAppliedTier = 'NATIVE_BILINEAR';
+                        img.dataset.upscaleAppliedTier = 'NATIVE_BILINEAR';
                     } else {
-                        delete imgs[i].dataset.upscaleAppliedTier;
+                        delete img.dataset.upscaleAppliedTier;
                     }
                 }
                 
-                delete imgs[i].dataset.origNw;
-                delete imgs[i].dataset.origNh;
-                delete imgs[i].dataset.upscaleProcessingKey;
-                delete imgs[i].dataset.pendingSwapUrl;
-                delete imgs[i].pendingUpscaleSwap;
+                delete img.dataset.origNw;
+                delete img.dataset.origNh;
+                delete img.dataset.upscaleProcessingKey;
+                delete img.dataset.pendingSwapUrl;
+                delete img.pendingUpscaleSwap;
             }
         });
     }
