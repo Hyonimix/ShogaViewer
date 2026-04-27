@@ -3245,8 +3245,8 @@ dom.viewerArea.addEventListener('pointermove', (e) => {
             const totalW = cW * currentZoom;
             const maxH = cH * currentZoom;
             
-            const overflowX = totalW > vW;
-            const overflowY = maxH > vH;
+            const overflowX = totalW > vW + 2;
+            const overflowY = maxH > vH + 2;
             
             if (currentZoom === 1 && !overflowX && !overflowY) {
                 axisLocked = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
