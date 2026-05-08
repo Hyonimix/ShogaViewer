@@ -128,7 +128,8 @@ const isHighMemMode = (navigator.deviceMemory || 8) >= 16;
 const maxZoomLimit = 25;
 
 let isLowEndHardware = false;
-function detectLowEndHardware() {
+
+async function initializeHardwareDetection() {
     const mem = navigator.deviceMemory || 8;
     const cores = navigator.hardwareConcurrency || 4;
     const ua = navigator.userAgent.toLowerCase();
@@ -136,8 +137,25 @@ function detectLowEndHardware() {
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
     const isSaveData = connection ? connection.saveData : false;
 
-    const isARM = ua.includes('arm') || ua.includes('aarch64');
-    const isX86 = !isARM && (ua.includes('x86') || ua.includes('x64') || ua.includes('win64') || ua.includes('wow64') || ua.includes('amd64') || ua.includes('intel')); 
+    let isARM = false;
+    let isX86 = false;
+    let archName = 'Unknown';
+
+    if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+        try {
+            const hints = await navigator.userAgentData.getHighEntropyValues(['architecture']);
+            archName = hints.architecture ? hints.architecture.toLowerCase() : 'unknown';
+            isARM = archName.includes('arm');
+            isX86 = archName.includes('x86');
+        } catch (e) {}
+    }
+
+    if (archName === 'Unknown' || archName === 'unknown') {
+        isARM = ua.includes('arm') || ua.includes('aarch64');
+        isX86 = !isARM && (ua.includes('x86') || ua.includes('x64') || ua.includes('win64') || ua.includes('wow64') || ua.includes('amd64') || ua.includes('intel'));
+        archName = isARM ? 'ARM (Fallback)' : (isX86 ? 'x86/x64 (Fallback)' : 'Unknown');
+    }
+
     const isMobile = ua.includes('mobi') || ua.includes('android') || ua.includes('iphone') || ua.includes('ipad') || ua.includes('tablet');
     const isCrOS = ua.includes('cros');
 
@@ -175,7 +193,6 @@ function detectLowEndHardware() {
         reason = `ARM Chromebook (${cores} cores, ${mem}GB)`;
     }
 
-    const archName = isARM ? 'ARM' : (isX86 ? 'x86/x64' : 'Unknown');
     const deviceType = isCrOS ? 'Chromebook' : (isMobile ? 'Mobile/Tablet' : 'Desktop');
 
     console.group('Hardware Detection');
@@ -192,9 +209,9 @@ function detectLowEndHardware() {
     }
     console.groupEnd();
 
-    return isLowEnd;
+    isLowEndHardware = isLowEnd;
 }
-isLowEndHardware = detectLowEndHardware();
+initializeHardwareDetection();
 
 let currentZoom = 1;
 let panX = 0, panY = 0;
