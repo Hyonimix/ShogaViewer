@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Shoga Viewer</title>
+
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<meta name="theme-color" content="#121212">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script src="./hls.min.js"></script>
+
+<style>
+:root {
+    --bg-color: #121212;
+    --panel-bg: rgba(30, 30, 30, 0.85);
+    --text-primary: #e0e0e0;
+    --text-secondary: #888888;
+    --accent: #3a82f6;
+    --shadow-light: rgba(255, 255, 255, 0.05);
+    --shadow-dark: rgba(0, 0, 0, 0.6);
+    --border-radius: 12px;
+    --transition-speed: 0.3s;
+}
+
+* {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+#top-bar {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: auto;
+    min-width: fit-content;
+    height: 54px;
+    background-color: var(--panel-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    z-index: 1000;
+    padding: 0 20px;
+    border-radius: 27px;
+    box-shadow: 0 8px 32px var(--shadow-dark), inset 0 1px 1px var(--shadow-light);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: transform var(--transition-speed) cubic-bezier(0.25, 1, 0.5, 1), opacity var(--transition-speed);
+}
+
+.panel {
+    position: absolute;
+    top: 85px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--panel-bg);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border-radius: var(--border-radius);
+    padding: 20px;
+    z-index: 1500;
+    box-shadow: 0 15px 35px var(--shadow-dark);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    min-width: 300px;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.2s, visibility 0.2s, transform 0.2s;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.panel.hidden {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(-50%) translateY(-10px);
+    pointer-events: none;
+}
+
+.panel-title {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 5px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    padding-bottom: 5px;
+}
+
+button {
+    background: rgba(45, 45, 45, 0.5);
+    color: var(--text-primary);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 10px 18px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    transition: all 0.2s;
+    outline: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+button:active, button.active {
+    background: var(--accent);
+    color: #ffffff;
+    border-color: var(--accent);
+}
+
+button:disabled {
+    opacity: 0.3;
+    filter: grayscale(1);
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+button:focus-visible, input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.button-group {
+    display: flex;
+    gap: 10px;
+}
+
+.button-group button {
+    flex: 1;
+}
+
+#btn-home, #btn-open-main, #btn-save, #btn-bookmarks, #btn-settings, #btn-grid, #btn-info {
+    padding: 10px;
+}
+
+#btn-home svg, #btn-open-main svg, #btn-save svg, #btn-bookmarks svg, #btn-settings svg, #btn-grid svg, #btn-info svg {
+    pointer-events: none;
+    display: block;
+}
+
+#cover-setting-group {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    margin-top: 0;
+    transition: all 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+#cover-setting-group.visible {
+    max-height: 80px;
+    opacity: 1;
+    margin-top: 10px;
+    overflow: visible;
+}
+
+.dropdown-wrapper {
+    position: relative;
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 15px);
+    left: 50%;
+    transform: translateX(-50%) translateY(-10px);
+    background-color: var(--panel-bg);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border-radius: var(--border-radius);
+    padding: 10px;
+    z-index: 1600;
+    box-shadow: 0 10px 30px var(--shadow-dark);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 220px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s, visibility 0.2s, transform 0.2s;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dropdown-menu.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+.dropdown-menu button {
+    width: 100%;
+    justify-content: flex-start;
+    padding: 12px 10px;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    text-align: left;
+    line-height: 1.0;
+    gap: 20px;
+}
+
+.dropdown-menu button svg {
+    flex-shrink: 0;
+}
+
+.dropdown-menu button:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.dropdown-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 5px 0;
+}
+
+#btn-toggle-recents.off {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
+    border-color: transparent;
+}
+
+.subtle-icon-btn {
+    padding: 6px;
+    min-width: auto;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+    border-radius: 6px;
+}
+
+.subtle-icon-btn:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+#recents-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+#recents-list::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
+}
+
+.info-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 10px;
+    word-break: break-all;
+}
+
+.info-label {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+}
+
+.info-value {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.info-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 15px 0;
+}
+
+#bookmarks-panel {
+    position: fixed;
+    top: 0;
+    right: -350px;
+    width: 320px;
+    height: 100%;
+    background-color: var(--panel-bg);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    z-index: 2000;
+    box-shadow: -10px 0 30px var(--shadow-dark);
+    transition: right 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#bookmarks-panel.active {
+    right: 0;
+}
+
+#bookmarks-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+#bookmarks-list::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
+}
+
+.bookmark-item {
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    padding: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+    border: 1px solid rgba(255,255,255,0.02);
+    will-change: transform;
+}
+
+.bookmark-item:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.bookmark-thumb {
+    width: 100%;
+    height: 140px;
+    object-fit: contain;
+    background: #000;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+}
+
+.bookmark-title {
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+}
+
+.bookmark-meta {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+#bookmark-search-wrapper {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    margin-bottom: 0;
+    transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    position: relative;
+}
+
+#bookmark-search-wrapper.visible {
+    max-height: 60px;
+    opacity: 1;
+    margin-bottom: 15px;
+    overflow: visible;
+}
+
+#bookmark-filter-input {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 8px 30px 8px 12px;
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    outline: none;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+#bookmark-filter-input:focus {
+    border-color: var(--accent);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+#bookmark-clear-btn {
+    position: absolute;
+    right: 4px;
+    top: 5px;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 4px;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, color 0.2s;
+}
+
+#bookmark-clear-btn:hover {
+    color: var(--text-primary);
+}
+
+#main-container {
+    width: 100%;
+    height: 100%;
+    position: relative;
+}
+
+#idle-screen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    z-index: 10;
+    pointer-events: none;
+    padding: 20px;
+}
+
+#idle-logo {
+    width: 100%;
+    max-width: 660px;
+    height: auto;
+    opacity: 0.5;
+}
+
+.attribution-link {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    cursor: pointer;
+    letter-spacing: 1px;
+    text-decoration: underline;
+    transition: opacity 0.2s;
+    pointer-events: auto;
+}
+
+.attribution-link:hover {
+    opacity: 1;
+}
+
+#ptr-indicator {
+    position: absolute;
+    top: 90px;
+    left: 50%;
+    transform: translateX(-50%) rotate(0deg);
+    z-index: 40;
+    opacity: 0;
+    display: none;
+    pointer-events: none;
+}
+
+#grid-area {
+    position: absolute;
+    inset: 0;
+    padding: 100px 20px 20px 20px;
+    display: none;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 15px;
+    overflow-y: auto;
+    background-color: var(--bg-color);
+    z-index: 50;
+    align-content: start;
+    touch-action: pan-y;
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+#grid-area::-webkit-scrollbar {
+    width: 4px;
+}
+
+#grid-area::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
+}
+
+#grid-area.pulling {
+    transition: none;
+    touch-action: none;
+}
+
+.grid-item {
+    width: 100%;
+    padding-bottom: 100%;
+    border-radius: var(--border-radius);
+    background-color: #1e1e1e;
+    box-shadow: 0 4px 12px var(--shadow-dark);
+    overflow: hidden;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.2s;
+}
+
+.grid-item:active {
+    transform: scale(0.95);
+}
+
+.grid-item canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.grid-item canvas.loaded {
+    opacity: 1;
+}
+
+.grid-item .index-badge {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+    background: rgba(0,0,0,0.7);
+    color: #fff;
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    border-radius: 10px;
+    pointer-events: none;
+}
+
+.folder-item {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 12px 16px;
+    border-radius: var(--border-radius);
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.2s, transform 0.1s;
+    font-weight: 600;
+}
+
+.folder-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.folder-item:active {
+    transform: scale(0.98);
+}
+
+.btn-up {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 8px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-up:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.header-controls-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.folder-sort-group {
+    display: flex;
+    gap: 2px;
+}
+
+.folder-sort-btn {
+    padding: 6px;
+    min-width: auto;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.folder-sort-btn.active {
+    color: var(--accent);
+    background: rgba(58, 130, 246, 0.1);
+}
+
+.folder-filter-input, .file-filter-input {
+    width: 150px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 6px 12px;
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    outline: none;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.folder-filter-input:focus, .file-filter-input:focus {
+    border-color: var(--accent);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+#viewer-area {
+    position: absolute;
+    inset: 0;
+    display: none;
+    background-color: var(--bg-color);
+    overflow: hidden;
+    z-index: 60;
+}
+
+#viewer-slider {
+    display: flex;
+    height: 100%;
+    width: 300%;
+    position: absolute;
+    left: -100%;
+}
+
+.view-slot {
+    width: 33.333%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    flex-shrink: 0;
+    pointer-events: none;
+}
+
+#viewer-content {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    justify-content: center;
+    align-items: center;
+    transform-origin: center center;
+    pointer-events: auto;
+}
+
+#viewer-content img, .view-slot img, #viewer-content video, .view-slot video {
+    user-select: none;
+    -webkit-user-drag: none;
+    flex-shrink: 0;
+}
+
+#viewer-content img {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    outline: 1px solid transparent;
+}
+
+#viewer-content img[data-upscale-applied-tier] {
+    image-rendering: auto;
+}
+
+.fit-contain img, .fit-contain video { max-width: 100%; max-height: 100%; object-fit: contain; width: var(--orig-w, auto); height: var(--orig-h, auto); }
+.fit-auto img, .fit-auto video { width: 100%; height: 100%; object-fit: contain; }
+.fit-width img, .fit-width video { width: 100%; height: auto; }
+.fit-height img, .fit-height video { height: 100%; width: auto; }
+.fit-original img, .fit-original video { width: var(--orig-w, auto); height: var(--orig-h, auto); max-width: none; max-height: none; }
+
+.view-spread.fit-contain img, .view-spread.fit-contain video { max-width: 50%; }
+.view-spread.fit-width img, .view-spread.fit-width video { width: 50%; }
+.view-spread.fit-auto img, .view-spread.fit-auto video { width: 50%; height: 100%; object-fit: contain; }
+
+img.spread-left, video.spread-left { object-position: right center !important; }
+img.spread-right, video.spread-right { object-position: left center !important; }
+
+body.ui-hidden #top-bar { transform: translateX(-50%) translateY(-100px); opacity: 0; }
+body.panning * { cursor: default !important; }
+body.animating #viewer-slider, 
+body.animating #viewer-content { transition: transform 0.25s ease-out; }
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 5000;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s;
+}
+.modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+.modal-content {
+    background: var(--panel-bg);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--border-radius);
+    padding: 25px;
+    width: 90%;
+    max-width: 340px;
+    transform: scale(0.9);
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    box-shadow: 0 20px 50px var(--shadow-dark);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+.modal-overlay.active .modal-content {
+    transform: scale(1);
+}
+#modal-confirm, #modal-search-file, #modal-search-folder {
+    flex: 1;
+}
+#modal-confirm {
+    background: #ef4444;
+    border-color: #ef4444;
+    color: #ffffff;
+}
+
+#upscale-fsr, #upscale-anime4k, #upscale-xbrz {
+    position: relative;
+}
+.upscale-warning {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background: #ef4444;
+    color: white;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    font-size: 10px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    pointer-events: auto;
+}
+.upscale-warning:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 120%;
+    right: 50%;
+    transform: translateX(50%);
+    background: rgba(0,0,0,0.9);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    white-space: normal;
+    width: 180px;
+    text-align: center;
+    pointer-events: none;
+    z-index: 2000;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+#license-content::-webkit-scrollbar {
+    width: 4px;
+}
+#license-content::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
+}
+
+#loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(255, 255, 255, 0.1);
+    border-top: 4px solid var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 20px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@media (max-aspect-ratio: 9/16) {
+    #top-bar {
+        height: 48px;
+        padding: 0 15px;
+        gap: 10px;
+    }
+    .panel {
+        min-width: unset;
+        width: 90%;
+        padding: 15px;
+        gap: 10px;
+    }
+    button {
+        font-size: 0.75rem;
+        padding: 8px 12px;
+    }
+    .button-group {
+        flex-wrap: wrap;
+    }
+}
+</style>
+</head>
+<body class="ui-hidden">
+
+<div id="top-bar">
+    <button id="btn-home" aria-label="Home" title="Home">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
+    </button>
+    <div class="dropdown-wrapper">
+        <button id="btn-open-main" aria-label="Open Menu" aria-expanded="false" aria-controls="open-dropdown" title="Open">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                <line x1="12" y1="11" x2="12" y2="17"></line>
+                <line x1="9" y1="14" x2="15" y2="14"></line>
+            </svg>
+        </button>
+        <div id="open-dropdown" class="dropdown-menu">
+            <button id="btn-open-files"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg> SELECT FILE(S)</button>
+            <button id="btn-open-dir"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> SELECT DIRECTORY</button>
+            <button id="btn-open-jellyfin"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg> CONNECT TO JELLYFIN</button>
+            <div id="recents-section" style="display:none;">
+                <div class="dropdown-divider"></div>
+                <div style="display:flex; justify-content:space-between; align-items:center; padding: 5px 10px;">
+                    <span style="font-size: 0.7rem; color: var(--text-secondary); letter-spacing: 1px; font-weight: 600;">RECENTS</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <button id="btn-toggle-recents" style="padding: 4px 8px; font-size: 0.65rem; min-width: auto; border-radius: 6px;">ON</button>
+                        <button id="btn-clear-recents" class="subtle-icon-btn" title="Clear Recents">
+                            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                    </div>
+                </div>
+                <div id="recents-list" style="max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;"></div>
+            </div>
+        </div>
+    </div>
+    <button id="btn-save" aria-label="Save Image" title="Save Image">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+    </button>
+    <input type="file" id="fallback-input-files" multiple accept="image/*,video/*" style="display:none;">
+    <input type="file" id="fallback-input-dir" webkitdirectory directory multiple accept="image/*,video/*" style="display:none;">
+    
+    <button id="btn-grid" style="display:none;" aria-label="Grid View" title="Grid View">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+        </svg>
+    </button>
+    <button id="btn-info" style="display:none;" aria-label="Information" title="Information">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+    </button>
+    <button id="btn-bookmarks" aria-label="Bookmarks" aria-expanded="false" aria-controls="bookmarks-panel" title="Bookmarks">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+        </svg>
+    </button>
+    <button id="btn-settings" aria-label="Settings" aria-expanded="false" aria-controls="settings-panel" title="Settings">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="21" x2="4" y2="14"></line>
+            <line x1="4" y1="10" x2="4" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            <line x1="20" y1="21" x2="20" y2="16"></line>
+            <line x1="20" y1="12" x2="20" y2="3"></line>
+            <line x1="1" y1="14" x2="7" y2="14"></line>
+            <line x1="9" y1="8" x2="15" y2="8"></line>
+            <line x1="17" y1="16" x2="23" y2="16"></line>
+        </svg>
+    </button>
+</div>
+
+<div id="settings-panel" class="panel hidden">
+    <div class="panel-title">Layout Architecture</div>
+    <div class="button-group">
+        <button id="mode-single" class="active">SINGLE</button>
+        <button id="mode-spread">SPREAD</button>
+    </div>
+    
+    <div id="cover-setting-group">
+        <div class="panel-title">Cover Presentation</div>
+        <div class="button-group">
+            <button id="cover-inline" class="active">INLINE</button>
+            <button id="cover-isolated">ISOLATED</button>
+        </div>
+    </div>
+    
+    <div class="panel-title" style="margin-top: 10px;">Reading Direction</div>
+    <div class="button-group">
+        <button id="dir-ltr" class="active">L TO R</button>
+        <button id="dir-rtl">R TO L</button>
+    </div>
+
+    <div class="panel-title" style="margin-top: 10px;">Viewport Fit</div>
+    <div class="button-group">
+        <button id="fit-auto" class="active">AUTO</button>
+        <button id="fit-contain">CONTAIN</button>
+        <button id="fit-width">WIDTH</button>
+        <button id="fit-height">HEIGHT</button>
+        <button id="fit-original">ORIGINAL</button>
+    </div>
+
+    <div class="panel-title" style="margin-top: 10px; display: flex; align-items: center;">
+        Upscaling <span id="upscale-x4-tag" style="display:none; color:#3a82f6; font-size:0.75rem; font-weight:bold; margin-left:8px; cursor:pointer; transition:color 0.2s;">x4</span>
+    </div>
+    <div class="button-group" style="flex-wrap: wrap;">
+        <button id="upscale-off" class="active" title="Off">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+        </button>
+        <button id="upscale-bilinear" title="Bilinear">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>
+        </button>
+        <button id="upscale-adptv" title="Adaptive Shoga+">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;">
+                <polygon points="11 2 2 13 10 13 9 22 18 11 10 11 11 2"></polygon>
+                <line x1="19" y1="3" x2="19" y2="9"></line>
+                <line x1="16" y1="6" x2="22" y2="6"></line>
+            </svg>
+        </button>
+        <button id="upscale-anime4k" title="Anime4K">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;"><path d="M12 19l7-7 3 3-7 7-3-3z"></path><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path><path d="M2 2l7.586 7.586"></path><circle cx="11" cy="11" r="2"></circle></svg><div id="warning-anime4k" class="upscale-warning" data-tooltip="Only 2x upscaling applied due to WebGL texture limits.">!</div>
+        </button>
+        <button id="upscale-xbrz" title="xBRZ">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;"><rect x="2" y="6" width="20" height="12" rx="2" ry="2"></rect><line x1="6" y1="12" x2="10" y2="12"></line><line x1="8" y1="10" x2="8" y2="14"></line><line x1="15" y1="13" x2="15.01" y2="13"></line><line x1="18" y1="11" x2="18.01" y2="11"></line></svg><div id="warning-xbrz" class="upscale-warning" data-tooltip="Only 2x upscaling applied due to WebGL texture limits.">!</div>
+        </button>
+        <button id="upscale-fsr" title="FSR Shoga+">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg><div id="warning-fsr" class="upscale-warning" data-tooltip="Only 2x upscaling applied due to WebGL texture limits.">!</div>
+        </button>
+    </div>
+</div>
+
+<div id="info-panel" class="panel hidden">
+    <div id="info-content"></div>
+</div>
+
+<div id="license-panel" class="panel hidden">
+    <div class="panel-title">Open Source Licenses</div>
+    <div id="license-content" style="font-size: 0.7rem; line-height: 1.5; color: var(--text-secondary); max-height: 70vh; overflow-y: auto; padding-right: 5px;">
+        <p><strong>Shoga Viewer</strong><br>Copyright (c) 2026 D5 Kan<br>Licensed under the GNU General Public License v3.0 (GPLv3).</p>
+        <p><strong>Feather Icons</strong><br>Copyright (c) 2013-2017 Cole Bemis<br>Licensed under the MIT License.</p>
+        <p><strong>FXAA (Fast Approximate Anti-Aliasing)</strong><br>Copyright (c) 2011 NVIDIA Corporation, Timothy Lottes<br>Licensed under the BSD License.</p>
+        <p><strong>AMD FidelityFX Super Resolution (FSR)</strong><br>Copyright (c) 2021 Advanced Micro Devices, Inc.<br>Licensed under the MIT License.</p>
+        <p><strong>Anime4K</strong><br>Copyright (c) 2019-2021 bloc97, et al.<br>Licensed under the MIT License.</p>
+        <p><strong>xBRZ</strong><br>Copyright (c) Zenju<br>Licensed under the GNU General Public License.</p>
+        <p><strong>FFmpeg & libx264</strong><br>Copyright (c) FFmpeg developers & VideoLAN<br>Licensed under the GNU General Public License.</p>
+        <p><strong>FFmpeg.wasm</strong><br>Copyright (c) 2019 Jerome Wu<br>Licensed under the MIT License.</p>
+        <p><strong>hls.js</strong><br>Copyright (c) 2015 Dailymotion / video-dev<br>Licensed under the Apache License 2.0.</p>
+        <p>This software also utilizes standard browser APIs and native system font stacks for performance and compatibility.</p>
+        <p style="margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px; color: var(--text-primary); font-style: italic;">
+            Wishing for the continued prosperity of the open-source and free software communities, this application will remain forever free, ad-free, open-source, and committed to a free fork policy.
+        </p>
+    </div>
+</div>
+
+<div id="bookmarks-panel">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 10px;">
+        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary); letter-spacing: 1px;">BOOKMARKS</div>
+        <div style="display:flex; gap:8px;">
+            <button id="btn-search-bookmarks" class="subtle-icon-btn" title="Search Bookmarks" style="padding: 4px; min-width: auto; border-radius: 6px;">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            </button>
+            <button id="btn-clear-bookmarks" class="subtle-icon-btn" title="Clear All Bookmarks" style="border: 1px solid #ef4444; color: #ef4444; padding: 4px; min-width: auto; border-radius: 6px;">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                </svg>
+            </button>
+            <button id="btn-add-bookmark" style="padding: 6px 12px; font-size: 0.7rem; border-radius: 12px; min-width: auto;">+ ADD</button>
+        </div>
+    </div>
+    <div id="bookmark-search-wrapper">
+        <input type="text" id="bookmark-filter-input" placeholder="Search...">
+        <button id="bookmark-clear-btn">
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+    </div>
+    <div id="bookmarks-list" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:12px; padding-right: 5px;"></div>
+</div>
+
+<div id="main-container">
+    <div id="idle-screen">
+        <svg id="idle-logo" viewBox="0 0 440 280">
+            <defs>
+                <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(255,255,255,0.02)" stroke-width="1"/>
+                </pattern>
+                <filter id="deboss" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="1" dy="1" stdDeviation="0.5" flood-color="#ffffff" flood-opacity="0.05"/>
+                    <feDropShadow dx="-1" dy="-1" stdDeviation="0.5" flood-color="#000000" flood-opacity="0.8"/>
+                </filter>
+                
+                <path id="L-S" d="M 24 0 L 6 0 A 6 6 0 0 0 0 6 L 0 14 A 6 6 0 0 0 6 20 L 18 20 A 6 6 0 0 1 24 26 L 24 34 A 6 6 0 0 1 18 40 L 0 40"/>
+                <path id="L-H" d="M 0 0 L 0 40 M 24 0 L 24 40 M 0 20 L 24 20"/>
+                <path id="L-O" d="M 6 0 L 18 0 A 6 6 0 0 1 24 6 L 24 34 A 6 6 0 0 1 18 40 L 6 40 A 6 6 0 0 1 0 34 L 0 6 A 6 6 0 0 1 6 0 Z"/>
+                <path id="L-G" d="M 24 12 L 24 6 A 6 6 0 0 0 18 0 L 6 0 A 6 6 0 0 0 0 6 L 0 34 A 6 6 0 0 0 6 40 L 18 40 A 6 6 0 0 0 24 34 L 24 20 L 12 20"/>
+                <path id="L-A" d="M 0 40 L 12 0 L 24 40 M 6 20 L 18 20"/>
+
+                <path id="mA" d="M0,10 L3,0 L6,10 M1.5,5 L4.5,5"/>
+                <path id="mC" d="M6,0 L0,0 L0,10 L6,10"/>
+                <path id="mE" d="M6,0 L0,0 L0,10 L6,10 M0,5 L5,5"/>
+                <path id="mG" d="M6,0 L0,0 L0,10 L6,10 L6,5 L3,5"/>
+                <path id="mI" d="M3,0 L3,10"/>
+                <path id="mL" d="M0,0 L0,10 L6,10"/>
+                <path id="mN" d="M0,10 L0,0 L6,10 L6,0"/>
+                <path id="mS" d="M6,0 L0,0 L0,5 L6,5 L6,10 L0,10"/>
+                <path id="mT" d="M0,0 L6,0 M3,0 L3,10"/>
+                <path id="mU" d="M0,0 L0,10 L6,10 L6,0"/>
+                <path id="mV" d="M0,0 L3,10 L6,0"/>
+            </defs>
+
+            <rect width="100%" height="100%" fill="url(#grid)"/>
+
+            <g filter="url(#deboss)">
+                <svg x="140" y="15" width="160" height="160" viewBox="0 0 512 512">
+                    <path d="M76 256C76 256 148 136 256 136C364 136 436 256 436 256C436 256 364 376 256 376C148 376 76 256 76 256Z" 
+                          fill="none" stroke="var(--bg-color)" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+                    <circle cx="256" cy="256" r="72" fill="none" stroke="var(--bg-color)" stroke-width="32"/>
+                    <circle cx="256" cy="256" r="28" fill="var(--bg-color)"/>
+                </svg>
+
+                <g transform="translate(119, 185) scale(1.2)" fill="none" stroke="var(--bg-color)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+                    <use href="#L-S" x="0"/>
+                    <use href="#L-H" x="36"/>
+                    <use href="#L-O" x="72"/>
+                    <use href="#L-G" x="108"/>
+                    <use href="#L-A" x="144"/>
+                </g>
+            </g>
+
+            <g transform="translate(92, 245)" fill="none" stroke="var(--text-secondary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <use href="#mV" x="0"/><use href="#mI" x="10"/><use href="#mS" x="20"/><use href="#mU" x="30"/><use href="#mA" x="40"/><use href="#mL" x="50"/>
+                <use href="#mI" x="70"/><use href="#mN" x="80"/><use href="#mT" x="90"/><use href="#mE" x="100"/><use href="#mL" x="110"/><use href="#mI" x="120"/><use href="#mG" x="130"/><use href="#mE" x="140"/><use href="#mN" x="150"/><use href="#mC" x="160"/><use href="#mE" x="170"/>
+                <use href="#mE" x="200"/><use href="#mN" x="210"/><use href="#mG" x="220"/><use href="#mI" x="230"/><use href="#mN" x="240"/><use href="#mE" x="250"/>
+            </g>
+        </svg>
+        <div class="attribution-link">OPEN SOURCE LICENSES</div>
+    </div>
+    <div id="ptr-indicator">
+        <svg viewBox="0 0 24 24" width="24" height="24" stroke="var(--text-secondary)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+    </div>
+    <div id="grid-area"></div>
+    <div id="viewer-area">
+        <div id="viewer-slider">
+            <div id="slot-prev" class="view-slot"></div>
+            <div id="slot-curr" class="view-slot"><div id="viewer-content"></div></div>
+            <div id="slot-next" class="view-slot"></div>
+        </div>
+    </div>
+</div>
+
+<div id="confirm-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div id="modal-title" class="panel-title" style="font-size: 0.9rem; color: var(--text-primary); border: none;">CONFIRM</div>
+        <div id="modal-message" style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5; margin: 5px 0 10px 0;">Are you sure you want to proceed?</div>
+        <div class="button-group">
+            <button id="modal-cancel">CANCEL</button>
+            <button id="modal-confirm">DELETE</button>
+        </div>
+    </div>
+</div>
+
+<div id="alert-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div id="alert-modal-title" class="panel-title" style="font-size: 0.9rem; color: var(--text-primary); border: none;">ALERT</div>
+        <div id="alert-modal-message" style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5; margin: 5px 0 10px 0;"></div>
+        <div class="button-group">
+            <button id="alert-modal-ok">OK</button>
+        </div>
+    </div>
+</div>
+
+<div id="search-choice-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="panel-title" style="font-size: 0.9rem; color: var(--text-primary); border: none;">SEARCH NAVIGATION</div>
+        <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5; margin: 5px 0 10px 0;">Select the target for your search:</div>
+        <div class="button-group">
+            <button id="modal-search-file">FILE</button>
+            <button id="modal-search-folder">FOLDER</button>
+        </div>
+        <button id="modal-search-cancel" style="background: transparent; border: 1px solid rgba(255,255,255,0.1); margin-top: 5px;">CANCEL</button>
+    </div>
+</div>
+
+<div id="transcode-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="panel-title" style="font-size: 0.9rem; color: var(--text-primary); border: none;">OPTIMIZING VIDEO</div>
+        <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5; margin: 5px 0 10px 0;">Converting unsupported codec...</div>
+        <div style="width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; margin-bottom: 5px;">
+            <div id="transcode-progress-bar" style="width: 0%; height: 100%; background: var(--accent); transition: width 0.2s;"></div>
+        </div>
+        <div id="transcode-progress-text" style="font-size: 0.75rem; color: var(--text-primary); text-align: right; margin-bottom: 10px;">0%</div>
+        <button id="btn-transcode-cancel" style="background: transparent; border: 1px solid rgba(255,255,255,0.1);">CANCEL</button>
+    </div>
+</div>
+
+<div id="jellyfin-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="panel-title" style="font-size: 0.9rem; color: var(--text-primary); border: none;">JELLYFIN CONNECTION</div>
+        <form id="jf-login-form" style="display: flex; flex-direction: column; margin: 0; padding: 0;">
+            <input type="url" id="jf-url" autocomplete="url" placeholder="Server URL (e.g., http://192.168.1.100:8096)" style="width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:10px; color:var(--text-primary); font-size:0.8rem; outline:none; margin-bottom:10px;" required>
+            <input type="text" id="jf-user" autocomplete="username" placeholder="Username" style="width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:10px; color:var(--text-primary); font-size:0.8rem; outline:none; margin-bottom:10px;" required>
+            <input type="password" id="jf-pass" autocomplete="current-password" placeholder="Password" style="width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:10px; color:var(--text-primary); font-size:0.8rem; outline:none; margin-bottom:12px;" required>
+            <div id="jf-error" style="color:#ef4444; font-size:0.75rem; margin-bottom:10px; display:none;"></div>
+            <div class="button-group">
+                <button type="button" id="btn-jf-cancel">CANCEL</button>
+                <button type="submit" id="btn-jf-connect" style="background:var(--accent); color:#fff; border-color:var(--accent);">CONNECT</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="transcode-warning-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="panel-title" style="font-size: 0.9rem; color: #ef4444; border: none;">SYSTEM WARNING</div>
+        <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5; margin: 5px 0 10px 0;">
+            Video transcoding is a heavily resource-intensive task. On low-end devices, this may cause severe browser freezing or crashes.<br><br>Do you wish to proceed?
+        </div>
+        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 10px; cursor: pointer;">
+            <input type="checkbox" id="transcode-warning-skip" style="accent-color: var(--accent);">
+            Do not show this warning again
+        </label>
+        <div class="button-group">
+            <button id="btn-tw-cancel">CANCEL</button>
+            <button id="btn-tw-proceed" style="background: #ef4444; color: #fff; border-color: #ef4444;">PROCEED</button>
+        </div>
+    </div>
+</div>
+
+<div id="upscale-indicator" style="position: fixed; bottom: 20px; left: 20px; display: none; align-items: center; gap: 8px; z-index: 9999; background: rgba(0,0,0,0.6); padding: 6px 12px; border-radius: 20px; pointer-events: none; backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.1);">
+    <svg viewBox="0 0 50 50" width="16" height="16">
+        <circle cx="25" cy="25" r="20" fill="none" stroke="var(--accent)" stroke-width="5" stroke-linecap="round" stroke-dasharray="31.4 31.4" transform="rotate(-90 25 25)">
+            <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s" repeatCount="indefinite"/>
+        </circle>
+    </svg>
+    <span style="font-size: 0.7rem; color: var(--text-primary); letter-spacing: 0.5px; font-weight: 600;">Upscaling...</span>
+</div>
+
+<div id="loading-overlay">
+    <div class="spinner"></div>
+    <div style="font-size: 0.8rem; color: var(--text-primary); letter-spacing: 1px; font-weight: 600;">PROCESSING</div>
+    <div id="loading-progress" style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 8px;"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

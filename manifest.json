@@ -1,0 +1,49 @@
+{
+  "id": "shoga-viewer-app",
+  "name": "Shoga Viewer",
+  "short_name": "Shoga",
+  "description": "A high-performance image viewer optimized for ChromeOS tablets and laptops, providing a fluid, local-first experience.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#121212",
+  "theme_color": "#121212",
+  "categories": [
+    "photo",
+    "productivity",
+    "utilities"
+  ],
+  "file_handlers": [
+    {
+      "action": "./index.html",
+      "accept": {
+        "image/jpeg": [".jpg", ".jpeg"],
+        "image/png": [".png"],
+        "image/webp": [".webp"],
+        "image/gif": [".gif"],
+        "image/svg+xml": [".svg"]
+      }
+    }
+  ],
+  "icons": [
+    {
+      "src": "icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

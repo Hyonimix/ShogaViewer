@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+  </defs>
+  
+  <rect width="512" height="512" fill="#121212"/>
+  
+  <path d="M76 256C76 256 148 136 256 136C364 136 436 256 436 256C436 256 364 376 256 376C148 376 76 256 76 256Z" 
+        fill="none" stroke="url(#blueGrad)" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <circle cx="256" cy="256" r="72" fill="none" stroke="#e0e0e0" stroke-width="32"/>
+  
+  <circle cx="256" cy="256" r="28" fill="url(#blueGrad)"/>
+</svg>
