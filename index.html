@@ -45,6 +45,25 @@ body, html {
     -webkit-user-select: none;
 }
 
+#btn-mobile-back {
+    position: fixed;
+    top: 25px;
+    left: 20px;
+    z-index: 2500;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    padding: 10px;
+    display: none;
+    opacity: 1;
+    transition: opacity 0.3s;
+    cursor: pointer;
+}
+@media (pointer: coarse), (max-width: 768px) {
+    #btn-mobile-back { display: block; }
+    body.ui-hidden #btn-mobile-back { opacity: 0; pointer-events: none; }
+}
+
 #top-bar {
     position: absolute;
     top: 20px;
@@ -836,6 +855,13 @@ body.animating #viewer-content { transition: transform 0.25s ease-out; }
 </style>
 </head>
 <body class="ui-hidden">
+
+<button id="btn-mobile-back" aria-label="Back">
+    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="19" y1="12" x2="5" y2="12"></line>
+        <polyline points="12 19 5 12 12 5"></polyline>
+    </svg>
+</button>
 
 <div id="top-bar">
     <button id="btn-home" aria-label="Home" title="Home">

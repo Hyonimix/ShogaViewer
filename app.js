@@ -36,7 +36,7 @@ function getGL() {
         _sharedGlCanvas = document.createElement('canvas');
         _sharedGl = _sharedGlCanvas.getContext('webgl2', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true }) || _sharedGlCanvas.getContext('webgl', { antialias: false, depth: false, alpha: true, preserveDrawingBuffer: true });
         if (_sharedGl) {
-            try { MAX_GL_TEXTURE_SIZE = _sharedGl.getParameter(_sharedGl.MAX_TEXTURE_SIZE); } catch(e) { console.error('Failed to get MAX_TEXTURE_SIZE', e); }
+            try { MAX_GL_TEXTURE_SIZE = _sharedGl.getParameter(_sharedGl.MAX_TEXTURE_SIZE); } catch (e) { console.error('Failed to get MAX_TEXTURE_SIZE', e); }
         } else {
             console.error('WebGL context creation completely failed.');
         }
@@ -57,7 +57,7 @@ const escapeHtml = (str) => {
 
 try {
     if (_sharedGl) MAX_GL_TEXTURE_SIZE = _sharedGl.getParameter(_sharedGl.MAX_TEXTURE_SIZE);
-} catch (e) {}
+} catch (e) { }
 
 function getDynamicMaxArea() {
     const mem = navigator.deviceMemory || 8;
@@ -66,9 +66,9 @@ function getDynamicMaxArea() {
     return 16777216;
 }
 
-let files =[];
-let currentFolders =[];
-let dirStack =[];
+let files = [];
+let currentFolders = [];
+let dirStack = [];
 let currentIndex = 0;
 let imageLayoutMode = localStorage.getItem('shoga-image-layout') || 'SINGLE';
 let videoLayoutMode = localStorage.getItem('shoga-video-layout') || 'SINGLE';
@@ -83,10 +83,10 @@ function getCurrentLayoutMode() {
     return isVideoFile(files[currentIndex]) ? videoLayoutMode : imageLayoutMode;
 }
 
-let readDir = 'LTR';
-let fitMode = 'AUTO';
-let firstPageCover = false;
-let viewMode = 'IDLE'; 
+let readDir = localStorage.getItem('shoga-read-dir') || 'LTR';
+let fitMode = localStorage.getItem('shoga-fit-mode') || 'AUTO';
+let firstPageCover = localStorage.getItem('shoga-first-page-cover') === 'true';
+let viewMode = 'IDLE';
 
 let folderSortMode = 'name-asc';
 let fileSortMode = 'name-asc';
@@ -96,8 +96,8 @@ const fileSortFn = (a, b) => {
     if (aIsVideo && !bIsVideo) return -1;
     if (!aIsVideo && bIsVideo) return 1;
 
-    if (fileSortMode === 'name-asc') return a.name.localeCompare(b.name, undefined, {numeric: true});
-    return b.name.localeCompare(a.name, undefined, {numeric: true});
+    if (fileSortMode === 'name-asc') return a.name.localeCompare(b.name, undefined, { numeric: true });
+    return b.name.localeCompare(a.name, undefined, { numeric: true });
 };
 
 let folderFilterText = '';
@@ -105,7 +105,7 @@ let fileFilterText = '';
 let bookmarkFilterText = '';
 
 let currentTitle = 'Shoga Viewer';
-let bookmarks =[];
+let bookmarks = [];
 let isGridRendered = false;
 let recentsEnabled = localStorage.getItem('shoga-recents-enabled') !== 'false';
 
@@ -119,7 +119,7 @@ const upscaleCache = new Map();
 let preloadQueueTimer = null;
 let isPreloading = false;
 
-let isSingleFileMode = false; 
+let isSingleFileMode = false;
 let pendingBookmarkRestoreId = null;
 
 let prevIndex = -1, nextIndex = -1;
@@ -147,7 +147,7 @@ async function initializeHardwareDetection() {
             archName = hints.architecture ? hints.architecture.toLowerCase() : 'unknown';
             isARM = archName.includes('arm');
             isX86 = archName.includes('x86');
-        } catch (e) {}
+        } catch (e) { }
     }
 
     if (archName === 'Unknown' || archName === 'unknown') {
@@ -169,7 +169,7 @@ async function initializeHardwareDetection() {
                 gpu = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL).toLowerCase();
             }
         }
-    } catch (e) {}
+    } catch (e) { }
 
     const isSoftwareGPU = gpu.includes('swiftshader') || gpu.includes('llvmpipe') || gpu.includes('software');
 
@@ -203,7 +203,7 @@ async function initializeHardwareDetection() {
     console.log(`GPU: ${gpu}`);
     console.log(`Data Saver: ${isSaveData ? 'On' : 'Off'}`);
     console.log(`Result: ${isLowEnd ? 'Low-End' : 'Good'} (${reason || 'Standard'})`);
-    
+
     if (isLowEnd) {
         console.warn('Low-End Hardware Detected: Applying Optimizations...');
     }
@@ -221,7 +221,7 @@ let axisLocked = null;
 
 let startX = 0, startY = 0;
 let initialPanX = 0, initialPanY = 0;
-let pointers =[];
+let pointers = [];
 let maxPointersDuringTap = 0;
 let initialDistance = 0, initialZoom = 1;
 
@@ -262,17 +262,17 @@ async function checkAnimated(file) {
         const view = new Uint8Array(buffer);
         if (file.type === 'image/webp') {
             if (view.length >= 21 &&
-                view[0]===82 && view[1]===73 && view[2]===70 && view[3]===70 &&
-                view[8]===87 && view[9]===69 && view[10]===66 && view[11]===80) {
+                view[0] === 82 && view[1] === 73 && view[2] === 70 && view[3] === 70 &&
+                view[8] === 87 && view[9] === 69 && view[10] === 66 && view[11] === 80) {
                 let offset = 12;
                 while (offset + 8 <= view.length) {
-                    const chunkId = String.fromCharCode(view[offset], view[offset+1], view[offset+2], view[offset+3]);
+                    const chunkId = String.fromCharCode(view[offset], view[offset + 1], view[offset + 2], view[offset + 3]);
                     if (chunkId === 'VP8X') {
                         const flags = view[offset + 8];
                         file.isAnimated = (flags & 2) !== 0;
                         return file.isAnimated;
                     }
-                    const chunkSize = view[offset+4] | (view[offset+5]<<8) | (view[offset+6]<<16) | (view[offset+7]<<24);
+                    const chunkSize = view[offset + 4] | (view[offset + 5] << 8) | (view[offset + 6] << 16) | (view[offset + 7] << 24);
                     offset += 8 + chunkSize + (chunkSize % 2);
                 }
             }
@@ -300,7 +300,7 @@ async function processTaskQueue() {
                 console.error('Task failed', e);
             }
         } else {
-            if(task.onCancel) task.onCancel();
+            if (task.onCancel) task.onCancel();
         }
     }
     isTaskProcessing = false;
@@ -407,18 +407,18 @@ async function handleVideoTranscode(file, idx, videoEl) {
     }
 
     isTranscoding = true;
-    
+
     const modal = document.getElementById('transcode-modal');
     const progressBar = document.getElementById('transcode-progress-bar');
     const progressText = document.getElementById('transcode-progress-text');
     const btnCancel = document.getElementById('btn-transcode-cancel');
-    
+
     modal.classList.add('active');
     progressBar.style.width = '0%';
     progressText.textContent = '0%';
-    
+
     transcodeAbortController = new AbortController();
-    
+
     const cleanup = () => {
         isTranscoding = false;
         modal.classList.remove('active');
@@ -428,12 +428,12 @@ async function handleVideoTranscode(file, idx, videoEl) {
 
     btnCancel.onclick = () => {
         if (ffmpegInstance) {
-            try { ffmpegInstance.terminate(); } catch(e) {}
+            try { ffmpegInstance.terminate(); } catch (e) { }
             ffmpegInstance = null;
         }
         if (transcodeAbortController) transcodeAbortController.abort();
         cleanup();
-        
+
         file.isBroken = true;
         const errDiv = document.createElement('div');
         errDiv.className = 'broken-file-ui' + (videoEl.className ? ' ' + videoEl.className : '');
@@ -454,7 +454,7 @@ async function handleVideoTranscode(file, idx, videoEl) {
     try {
         const ffmpeg = await loadFFmpeg();
         const { fetchFile } = window.FFmpegUtil;
-        
+
         ffmpeg.on('progress', ({ progress }) => {
             const percent = Math.max(0, Math.min(100, Math.round(progress * 100)));
             progressBar.style.width = `${percent}%`;
@@ -463,29 +463,29 @@ async function handleVideoTranscode(file, idx, videoEl) {
 
         const inputName = 'input' + file.name.substring(file.name.lastIndexOf('.'));
         const outputName = 'output.mp4';
-        
+
         await ffmpeg.writeFile(inputName, await fetchFile(file));
-        
+
         await ffmpeg.exec(['-i', inputName, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-c:a', 'aac', outputName]);
-        
+
         if (transcodeAbortController && transcodeAbortController.signal.aborted) throw new Error('Aborted');
 
         const data = await ffmpeg.readFile(outputName);
         const blob = new Blob([data.buffer], { type: 'video/mp4' });
         const newUrl = URL.createObjectURL(blob);
-        
+
         const oldUrl = urlCache.get(idx);
         if (oldUrl) URL.revokeObjectURL(oldUrl);
         urlCache.set(idx, newUrl);
-        
+
         files[idx] = new File([blob], file.name + '.mp4', { type: 'video/mp4' });
-        
+
         videoEl.src = newUrl;
-        videoEl.play().catch(e=>{});
-        
+        videoEl.play().catch(e => { });
+
         await ffmpeg.deleteFile(inputName);
         await ffmpeg.deleteFile(outputName);
-        
+
         cleanup();
     } catch (e) {
         console.error('Transcoding failed:', e);
@@ -558,7 +558,7 @@ async function saveBookmarkToDB(bookmark) {
                 reject(err);
             }
         });
-    } catch(e) { throw e; }
+    } catch (e) { throw e; }
 }
 
 async function loadBookmarksFromDB() {
@@ -568,14 +568,14 @@ async function loadBookmarksFromDB() {
             try {
                 const tx = db.transaction(STORE_BOOKMARKS, 'readonly');
                 const req = tx.objectStore(STORE_BOOKMARKS).getAll();
-                req.onsuccess = () => { resolve(req.result ||[]); };
+                req.onsuccess = () => { resolve(req.result || []); };
                 req.onerror = () => { resolve([]); };
             } catch (err) {
                 resolve([]);
             }
         });
     } catch (e) {
-        return[];
+        return [];
     }
 }
 
@@ -592,7 +592,7 @@ async function deleteBookmarkFromDB(id) {
                 reject(err);
             }
         });
-    } catch(e) { throw e; }
+    } catch (e) { throw e; }
 }
 
 async function saveDirHandle(handle) {
@@ -606,13 +606,13 @@ async function saveDirHandle(handle) {
                 const req = store.get('recent-handles');
                 req.onsuccess = () => {
                     try {
-                        let handles = req.result ||[];
+                        let handles = req.result || [];
                         handles = handles.filter(h => h.name !== handle.name);
                         handles.unshift({ name: handle.name, handle: handle, ts: Date.now() });
-                        handles = handles.slice(0, 5); 
+                        handles = handles.slice(0, 5);
                         store.put(handles, 'recent-handles');
                     } catch (e) {
-                        try { tx.abort(); } catch (e2) {}
+                        try { tx.abort(); } catch (e2) { }
                         reject(e);
                     }
                 };
@@ -622,7 +622,7 @@ async function saveDirHandle(handle) {
                 reject(err);
             }
         });
-    } catch (err) {}
+    } catch (err) { }
 }
 
 async function loadDirHandles() {
@@ -632,13 +632,13 @@ async function loadDirHandles() {
             try {
                 const tx = db.transaction(STORE_HANDLES, 'readonly');
                 const req = tx.objectStore(STORE_HANDLES).get('recent-handles');
-                req.onsuccess = () => { resolve(req.result ||[]); };
+                req.onsuccess = () => { resolve(req.result || []); };
                 req.onerror = () => { resolve([]); };
             } catch (err) {
                 resolve([]);
             }
         });
-    } catch (err) { return[]; }
+    } catch (err) { return []; }
 }
 
 async function clearDirHandles() {
@@ -654,7 +654,7 @@ async function clearDirHandles() {
                 reject(err);
             }
         });
-    } catch(e) {}
+    } catch (e) { }
 }
 
 async function verifyPermission(fileHandle) {
@@ -737,7 +737,7 @@ __swipeStyle.textContent = `
 document.head.appendChild(__swipeStyle);
 
 function switchToIdle() {
-    pointers =[]; isPanning = false; isDragging = false; isGridSwiping = false; isGridPulling = false; initialDistance = 0;
+    pointers = []; isPanning = false; isDragging = false; isGridSwiping = false; isGridPulling = false; initialDistance = 0;
     viewMode = 'IDLE';
     dom.gridArea.style.display = 'none';
     dom.viewerArea.style.display = 'none';
@@ -773,19 +773,33 @@ function switchToIdle() {
         document.getElementById('upscale-off').classList.add('active');
     }
 
+    document.querySelectorAll('#mode-single, #mode-spread').forEach(b => b.classList.remove('active'));
+    document.getElementById(imageLayoutMode === 'SINGLE' ? 'mode-single' : 'mode-spread').classList.add('active');
+    if (imageLayoutMode === 'SPREAD') dom.coverSettingGroup.classList.add('visible');
+    else dom.coverSettingGroup.classList.remove('visible');
+
+    document.querySelectorAll('#cover-inline, #cover-isolated').forEach(b => b.classList.remove('active'));
+    document.getElementById(firstPageCover ? 'cover-isolated' : 'cover-inline').classList.add('active');
+
+    document.querySelectorAll('#dir-ltr, #dir-rtl').forEach(b => b.classList.remove('active'));
+    document.getElementById(readDir === 'LTR' ? 'dir-ltr' : 'dir-rtl').classList.add('active');
+
+    document.querySelectorAll('#fit-auto, #fit-contain, #fit-width, #fit-height, #fit-original').forEach(b => b.classList.remove('active'));
+    document.getElementById('fit-' + fitMode.toLowerCase()).classList.add('active');
+
     const x4Tag = document.getElementById('upscale-x4-tag');
-    
+
     if (isHighMemMode) {
         x4Tag.style.display = 'inline';
         x4Tag.style.color = is4xEnabled ? '#3a82f6' : '#666666';
-        
+
         x4Tag.addEventListener('click', () => {
             is4xEnabled = !is4xEnabled;
             localStorage.setItem('shoga-4x-enabled', is4xEnabled);
             x4Tag.style.color = is4xEnabled ? '#3a82f6' : '#666666';
-            
+
             if (upscaleMode !== 'OFF') {
-                for (let[k, v] of upscaleCache.entries()) {
+                for (let [k, v] of upscaleCache.entries()) {
                     if (v === 'error') upscaleCache.delete(k);
                 }
                 clearTimeout(upscaleDebounceTimer);
@@ -805,7 +819,7 @@ function switchToIdle() {
             const fileName = imgUrl.split('/').pop().split('?')[0] || 'remote-image';
             const file = new File([blob], fileName, { type: blob.type });
             processFileList([file], 'REMOTE IMAGE');
-        } catch (e) {}
+        } catch (e) { }
         finally { hideLoading(); }
     }
 })();
@@ -859,7 +873,7 @@ function showSearchChoiceModal() {
         btnFile.onclick = () => cleanup('file');
         btnFolder.onclick = () => cleanup('folder');
         if (btnCancel) btnCancel.onclick = () => cleanup(null);
-        modal.onclick = (e) => { if(e.target === modal) cleanup(null); };
+        modal.onclick = (e) => { if (e.target === modal) cleanup(null); };
     });
 }
 
@@ -887,17 +901,17 @@ async function generateHighPerfThumbnail(file, canvas) {
             canvas.height = THUMB_SIZE * (img.height / img.width);
             const ctx = canvas.getContext('2d', { alpha: false });
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            
+
             if (file.type.startsWith('video/')) {
                 ctx.fillStyle = 'rgba(0,0,0,0.5)';
                 ctx.beginPath();
-                ctx.arc(canvas.width/2, canvas.height/2, 20, 0, Math.PI*2);
+                ctx.arc(canvas.width / 2, canvas.height / 2, 20, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
-                ctx.moveTo(canvas.width/2 - 6, canvas.height/2 - 8);
-                ctx.lineTo(canvas.width/2 + 10, canvas.height/2);
-                ctx.lineTo(canvas.width/2 - 6, canvas.height/2 + 8);
+                ctx.moveTo(canvas.width / 2 - 6, canvas.height / 2 - 8);
+                ctx.lineTo(canvas.width / 2 + 10, canvas.height / 2);
+                ctx.lineTo(canvas.width / 2 - 6, canvas.height / 2 + 8);
                 ctx.fill();
             }
             canvas.classList.add('loaded');
@@ -913,8 +927,8 @@ async function generateHighPerfThumbnail(file, canvas) {
             ctx.strokeStyle = '#ef4444';
             ctx.lineWidth = 4;
             ctx.beginPath();
-            ctx.moveTo(canvas.width*0.33, canvas.height*0.33); ctx.lineTo(canvas.width*0.66, canvas.height*0.66);
-            ctx.moveTo(canvas.width*0.66, canvas.height*0.33); ctx.lineTo(canvas.width*0.33, canvas.height*0.66);
+            ctx.moveTo(canvas.width * 0.33, canvas.height * 0.33); ctx.lineTo(canvas.width * 0.66, canvas.height * 0.66);
+            ctx.moveTo(canvas.width * 0.66, canvas.height * 0.33); ctx.lineTo(canvas.width * 0.33, canvas.height * 0.66);
             ctx.stroke();
             canvas.classList.add('loaded');
         };
@@ -934,18 +948,18 @@ async function generateHighPerfThumbnail(file, canvas) {
             canvas.height = THUMB_SIZE * (video.videoHeight / video.videoWidth);
             const ctx = canvas.getContext('2d', { alpha: false });
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
+
             ctx.fillStyle = 'rgba(0,0,0,0.5)';
             ctx.beginPath();
-            ctx.arc(canvas.width/2, canvas.height/2, 20, 0, Math.PI*2);
+            ctx.arc(canvas.width / 2, canvas.height / 2, 20, 0, Math.PI * 2);
             ctx.fill();
             ctx.fillStyle = '#fff';
             ctx.beginPath();
-            ctx.moveTo(canvas.width/2 - 6, canvas.height/2 - 8);
-            ctx.lineTo(canvas.width/2 + 10, canvas.height/2);
-            ctx.lineTo(canvas.width/2 - 6, canvas.height/2 + 8);
+            ctx.moveTo(canvas.width / 2 - 6, canvas.height / 2 - 8);
+            ctx.lineTo(canvas.width / 2 + 10, canvas.height / 2);
+            ctx.lineTo(canvas.width / 2 - 6, canvas.height / 2 + 8);
             ctx.fill();
-            
+
             URL.revokeObjectURL(video.src);
             canvas.classList.add('loaded');
         };
@@ -960,8 +974,8 @@ async function generateHighPerfThumbnail(file, canvas) {
             ctx.strokeStyle = '#ef4444';
             ctx.lineWidth = 4;
             ctx.beginPath();
-            ctx.moveTo(canvas.width*0.33, canvas.height*0.33); ctx.lineTo(canvas.width*0.66, canvas.height*0.66);
-            ctx.moveTo(canvas.width*0.66, canvas.height*0.33); ctx.lineTo(canvas.width*0.33, canvas.height*0.66);
+            ctx.moveTo(canvas.width * 0.33, canvas.height * 0.33); ctx.lineTo(canvas.width * 0.66, canvas.height * 0.66);
+            ctx.moveTo(canvas.width * 0.66, canvas.height * 0.33); ctx.lineTo(canvas.width * 0.33, canvas.height * 0.66);
             ctx.stroke();
             URL.revokeObjectURL(video.src);
             canvas.classList.add('loaded');
@@ -1002,8 +1016,8 @@ async function generateHighPerfThumbnail(file, canvas) {
             ctx.strokeStyle = '#ef4444';
             ctx.lineWidth = 4;
             ctx.beginPath();
-            ctx.moveTo(canvas.width*0.33, canvas.height*0.33); ctx.lineTo(canvas.width*0.66, canvas.height*0.66);
-            ctx.moveTo(canvas.width*0.66, canvas.height*0.33); ctx.lineTo(canvas.width*0.33, canvas.height*0.66);
+            ctx.moveTo(canvas.width * 0.33, canvas.height * 0.33); ctx.lineTo(canvas.width * 0.66, canvas.height * 0.66);
+            ctx.moveTo(canvas.width * 0.66, canvas.height * 0.33); ctx.lineTo(canvas.width * 0.33, canvas.height * 0.66);
             ctx.stroke();
             URL.revokeObjectURL(img.src);
             canvas.classList.add('loaded');
@@ -1013,7 +1027,7 @@ async function generateHighPerfThumbnail(file, canvas) {
 
 async function captureThumbnail() {
     const group = getSpreadGroup(currentIndex);
-    
+
     if (group.length === 1) {
         const gridItem = document.querySelector(`.grid-item[data-index="${group[0]}"] canvas.loaded`);
         if (gridItem) return gridItem.toDataURL('image/jpeg', 0.8);
@@ -1024,18 +1038,18 @@ async function captureThumbnail() {
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = canvasL.width + canvasR.width;
             tempCanvas.height = Math.max(canvasL.height, canvasR.height);
-            const ctx = tempCanvas.getContext('2d', {alpha: false});
+            const ctx = tempCanvas.getContext('2d', { alpha: false });
             ctx.fillStyle = '#000';
-            ctx.fillRect(0,0, tempCanvas.width, tempCanvas.height);
-            ctx.drawImage(canvasL, 0, (tempCanvas.height - canvasL.height)/2);
-            ctx.drawImage(canvasR, canvasL.width, (tempCanvas.height - canvasR.height)/2);
+            ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+            ctx.drawImage(canvasL, 0, (tempCanvas.height - canvasL.height) / 2);
+            ctx.drawImage(canvasR, canvasL.width, (tempCanvas.height - canvasR.height) / 2);
             return tempCanvas.toDataURL('image/jpeg', 0.8);
         }
     }
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { alpha: false });
-    
+
     const THUMB_W = isLowEndHardware ? 200 : 400;
     const THUMB_W_HALF = isLowEndHardware ? 100 : 200;
     const THUMB_H_DEFAULT = isLowEndHardware ? 150 : 300;
@@ -1063,10 +1077,10 @@ async function captureThumbnail() {
         } else if (group.length === 2) {
             let idxLeft = readDir === 'LTR' ? group[0] : group[1];
             let idxRight = readDir === 'LTR' ? group[1] : group[0];
-            
+
             bmpL = await getBmp(files[idxLeft], THUMB_W_HALF);
             bmpR = await getBmp(files[idxRight], THUMB_W_HALF);
-            
+
             const wL = bmpL.width || bmpL.naturalWidth;
             const hL = bmpL.height || bmpL.naturalHeight;
             const wR = bmpR.width || bmpR.naturalWidth;
@@ -1076,7 +1090,7 @@ async function captureThumbnail() {
             canvas.height = Math.max(hL, hR);
             ctx.fillStyle = '#000';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
+
             ctx.drawImage(bmpL, 0, (canvas.height - hL) / 2, wL, hL);
             ctx.drawImage(bmpR, wL, (canvas.height - hR) / 2, wR, hR);
         }
@@ -1105,7 +1119,7 @@ async function renderRecents() {
         btn.addEventListener('click', async () => {
             dom.openDropdown.classList.remove('active');
             if (await verifyPermission(item.handle)) {
-                dirStack =[{ handle: item.handle, name: item.name }];
+                dirStack = [{ handle: item.handle, name: item.name }];
                 await processDirectoryHandle(item.handle, item.name);
             }
         });
@@ -1262,11 +1276,11 @@ function renderBookmarks() {
                 e.stopPropagation();
                 const confirmed = await showConfirmModal('DELETE BOOKMARK', `Remove "${bk.title}"?`);
                 if (!confirmed) return;
-                
+
                 bookmarks = bookmarks.filter(b => b.id !== bk.id);
                 try {
                     await deleteBookmarkFromDB(bk.id);
-                } catch(err) { console.error(err); }
+                } catch (err) { console.error(err); }
                 renderBookmarks();
             } else {
                 await restoreBookmark(bk.id);
@@ -1298,30 +1312,30 @@ function renderBookmarks() {
 async function restoreBookmark(id) {
     const bk = bookmarks.find(b => b.id === id);
     if (!bk) return;
-    
+
     bk.lastAccessed = Date.now();
     try {
         await saveBookmarkToDB(bk);
-    } catch(err) { console.error(err); }
-    
+    } catch (err) { console.error(err); }
+
     renderBookmarks();
     dom.bookmarksList.scrollTo({ top: 0, behavior: 'smooth' });
-    
+
     dom.bookmarksList.style.pointerEvents = 'none';
     await new Promise(resolve => setTimeout(resolve, 350));
     dom.bookmarksList.style.pointerEvents = 'auto';
 
-    let restoredFiles =[];
-    
+    let restoredFiles = [];
+
     if (currentTitle === bk.title) {
         const nameMap = new Map();
         files.forEach(f => nameMap.set(f.name, f));
-        
+
         bk.state.fileNames.forEach(name => {
             if (nameMap.has(name)) restoredFiles.push(nameMap.get(name));
         });
     }
-    
+
     if (restoredFiles.length === 0) {
         let autoRestored = false;
 
@@ -1390,7 +1404,7 @@ async function restoreBookmark(id) {
                 } else if (await verifyPermission(target.handle)) {
                     const fileList = [];
                     const folderList = [];
-                    const fileEntries =[];
+                    const fileEntries = [];
                     for await (const entry of target.handle.values()) {
                         if (entry.kind === 'file') {
                             fileEntries.push(entry);
@@ -1423,7 +1437,7 @@ async function restoreBookmark(id) {
                         dirStack = bk.state.dirStack;
                     }
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
 
         if (!autoRestored && window.showDirectoryPicker) {
@@ -1431,9 +1445,9 @@ async function restoreBookmark(id) {
             const matchedItem = handles.find(h => h.name === bk.title);
             if (matchedItem) {
                 if (await verifyPermission(matchedItem.handle)) {
-                    const fileList =[];
+                    const fileList = [];
                     const folderList = [];
-                    const fileEntries =[];
+                    const fileEntries = [];
                     for await (const entry of matchedItem.handle.values()) {
                         if (entry.kind === 'file') {
                             fileEntries.push(entry);
@@ -1463,7 +1477,7 @@ async function restoreBookmark(id) {
                     if (restoredFiles.length > 0) {
                         autoRestored = true;
                         currentFolders = folderList;
-                        dirStack =[{ handle: matchedItem.handle, name: matchedItem.name }];
+                        dirStack = [{ handle: matchedItem.handle, name: matchedItem.name }];
                     }
                 }
             }
@@ -1480,7 +1494,7 @@ async function restoreBookmark(id) {
                 if (idleDesc) idleDesc.textContent = `Please select the folder:[ ${bk.title} ]`;
                 closeAllPanels();
                 switchToIdle();
-                
+
                 setTimeout(() => {
                     if (window.showDirectoryPicker) handleDirectoryPicker();
                     else dom.fallbackInputDir.click();
@@ -1489,31 +1503,31 @@ async function restoreBookmark(id) {
             }
         }
     }
-    
+
     if (restoredFiles.length === 0) {
         pendingBookmarkRestoreId = null;
         switchToIdle();
         return;
     }
-    
+
     pendingBookmarkRestoreId = null;
     destroyAllHls();
 
-    urlCache.forEach(url => { if(url.startsWith('blob:')) URL.revokeObjectURL(url); });
+    urlCache.forEach(url => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); });
     urlCache.clear();
 
-    upscaleCache.forEach(url => { if(url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
+    upscaleCache.forEach(url => { if (url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
     upscaleCache.clear();
 
     files = restoredFiles;
     currentTitle = bk.state.title;
     document.title = currentTitle;
-    
+
     const targetName = bk.state.currentFileName;
     const foundIndex = files.findIndex(f => f.name === targetName);
     currentIndex = foundIndex !== -1 ? foundIndex : bk.state.currentIndex;
     if (currentIndex >= files.length) currentIndex = Math.max(0, files.length - 1);
-    
+
     const savedMode = bk.state.layoutMode || 'SINGLE';
     if (files[currentIndex] && isVideoFile(files[currentIndex])) {
         videoLayoutMode = savedMode;
@@ -1523,15 +1537,15 @@ async function restoreBookmark(id) {
     readDir = bk.state.readDir;
     fitMode = bk.state.fitMode;
     firstPageCover = bk.state.firstPageCover;
-    
-    isGridRendered = false; 
+
+    isGridRendered = false;
 
     document.querySelectorAll('#mode-single, #mode-spread').forEach(b => b.classList.remove('active'));
     document.getElementById(getCurrentLayoutMode() === 'SINGLE' ? 'mode-single' : 'mode-spread').classList.add('active');
-    
+
     if (getCurrentLayoutMode() === 'SPREAD') dom.coverSettingGroup.classList.add('visible');
     else dom.coverSettingGroup.classList.remove('visible');
-    
+
     document.querySelectorAll('#cover-inline, #cover-isolated').forEach(b => b.classList.remove('active'));
     document.getElementById(firstPageCover ? 'cover-isolated' : 'cover-inline').classList.add('active');
 
@@ -1550,7 +1564,7 @@ dom.btnAddBookmark.addEventListener('click', async () => {
     if (files.length === 0 || viewMode !== 'VIEWER') return;
     dom.btnAddBookmark.style.opacity = '0.5';
     dom.btnAddBookmark.textContent = '...';
-    
+
     const tb = await captureThumbnail();
     const bk = {
         id: Date.now(),
@@ -1574,10 +1588,10 @@ dom.btnAddBookmark.addEventListener('click', async () => {
         await saveBookmarkToDB(bk);
         bookmarks.push(bk);
         renderBookmarks();
-    } catch(e) {
+    } catch (e) {
         console.error(e);
     }
-    
+
     dom.btnAddBookmark.style.opacity = '1';
     dom.btnAddBookmark.textContent = '+ ADD';
 });
@@ -1585,13 +1599,13 @@ dom.btnAddBookmark.addEventListener('click', async () => {
 dom.btnClearBookmarks.addEventListener('click', async () => {
     const confirmed = await showConfirmModal('DELETE ALL BOOKMARKS', 'Are you sure you want to permanently clear all items?');
     if (!confirmed) return;
-    
+
     for (const bk of bookmarks) {
         try {
             await deleteBookmarkFromDB(bk.id);
-        } catch(e) { console.error(e); }
+        } catch (e) { console.error(e); }
     }
-    bookmarks =[];
+    bookmarks = [];
     renderBookmarks();
 });
 
@@ -1609,7 +1623,7 @@ function destroyAllHls() {
 function getFileUrl(index) {
     if (index < 0 || index >= files.length) return null;
     const file = files[index];
-    
+
     if (file.isJellyfin) {
         if (file.type.startsWith('video/')) {
             const mem = navigator.deviceMemory || 4;
@@ -1646,10 +1660,11 @@ function getFileUrl(index) {
 
             return `${file.serverUrl}/Videos/${file.id}/master.m3u8?DeviceId=${file.deviceId}&PlaySessionId=${file.playSessionId}&MediaSourceId=${file.id}&VideoCodec=h264&AudioCodec=aac&RequireAvc=true&VideoBitDepth=8&VideoBitrate=${targetVideoBitrate}&AudioBitrate=${targetAudioBitrate}&MaxWidth=${maxWidth}&MaxFramerate=${maxFramerate}&api_key=${file.accessToken}`;
         } else {
-            return `${file.serverUrl}/Items/${file.id}/Images/Primary?maxWidth=3840&api_key=${file.accessToken}`;
+            const targetWidth = isLowEndHardware ? 1920 : 3840;
+            return `${file.serverUrl}/Items/${file.id}/Images/Primary?maxWidth=${targetWidth}&api_key=${file.accessToken}`;
         }
     }
-    
+
     if (urlCache.has(index)) {
         const url = urlCache.get(index);
         urlCache.delete(index);
@@ -1666,25 +1681,25 @@ function getFileUrl(index) {
     return url;
 }
 
-setTimeout(() => { if(viewMode === 'IDLE') dom.body.classList.remove('ui-hidden'); }, 100);
+setTimeout(() => { if (viewMode === 'IDLE') dom.body.classList.remove('ui-hidden'); }, 100);
 
-dom.btnOpenMain.addEventListener('click', (e) => { 
-    e.stopPropagation(); 
+dom.btnOpenMain.addEventListener('click', (e) => {
+    e.stopPropagation();
     pendingBookmarkRestoreId = null;
     const isActive = dom.openDropdown.classList.contains('active');
     closeAllPanels();
     if (!isActive) {
-        dom.openDropdown.classList.add('active'); 
+        dom.openDropdown.classList.add('active');
         dom.btnOpenMain.setAttribute('aria-expanded', 'true');
     }
 });
 
 async function saveCurrentImage() {
     if (files.length === 0 || viewMode !== 'VIEWER') return;
-    
+
     const indices = getSpreadGroup(currentIndex);
     const mediaEls = Array.from(dom.viewerContent.querySelectorAll('img:not(.crossfade-clone), video'));
-    
+
     for (let i = 0; i < indices.length; i++) {
         const idx = indices[i];
         const originalFile = files[idx];
@@ -1692,42 +1707,42 @@ async function saveCurrentImage() {
         let fileName = originalFile.name;
         let baseName = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
         let ext = fileName.includes('.') ? fileName.substring(fileName.lastIndexOf('.')) : '';
-        
+
         if (originalFile.isJellyfin) {
             try {
                 const res = await fetch(getFileUrl(idx));
                 blobToSave = await res.blob();
             } catch (e) { continue; }
         }
-        
+
         const mediaEl = mediaEls.find(el => parseInt(el.dataset.fileIndex) === idx);
-        
+
         if (mediaEl && mediaEl.tagName.toLowerCase() === 'IMG' && mediaEl.dataset.upscaleAppliedTier && upscaleCache.has(mediaEl.dataset.upscaleAppliedTier)) {
             const cacheKey = imgEl.dataset.upscaleAppliedTier;
             const cachedUrl = upscaleCache.get(cacheKey);
-            
+
             if (cachedUrl !== 'error' && cachedUrl !== 'skipped' && cachedUrl !== 'processing' && cachedUrl.startsWith('blob:')) {
                 try {
                     const resp = await fetch(cachedUrl);
                     blobToSave = await resp.blob();
                     ext = (blobToSave.type === 'image/png') ? '.png' : '.jpg';
-                    
+
                     let modeName = '';
                     if (cacheKey.includes('_FSR_')) modeName = 'FSR_ShogaPlus';
                     else if (cacheKey.includes('_ANIME4K_')) modeName = 'Anime4K';
                     else if (cacheKey.includes('_XBRZ_')) modeName = 'xBRZ';
                     else if (cacheKey.includes('_ADPTV_SHOGA_')) modeName = 'Adptv_ShogaPlus';
-                    
+
                     let ratioMatch = cacheKey.match(/_([\d\.]+)$/);
                     let ratioSuffix = ratioMatch ? `_${ratioMatch[1]}x` : '';
-                    
+
                     if (modeName) {
                         fileName = `${baseName}_${modeName}${ratioSuffix}${ext}`;
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
         }
-        
+
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blobToSave);
         link.download = fileName;
@@ -1735,7 +1750,7 @@ async function saveCurrentImage() {
         link.click();
         document.body.removeChild(link);
         setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-        
+
         if (indices.length > 1) {
             await new Promise(r => setTimeout(r, 500));
         }
@@ -1750,16 +1765,16 @@ dom.btnSave.addEventListener('click', (e) => {
 dom.btnHome.addEventListener('click', () => {
     dom.openDropdown.classList.remove('active');
     destroyAllHls();
-    currentFolders =[];
-    dirStack =[];
+    currentFolders = [];
+    dirStack = [];
     currentIndex = 0;
-    
-    urlCache.forEach(url => { if(url.startsWith('blob:')) URL.revokeObjectURL(url); });
+
+    urlCache.forEach(url => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); });
     urlCache.clear();
-    
-    upscaleCache.forEach(url => { if(url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
+
+    upscaleCache.forEach(url => { if (url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
     upscaleCache.clear();
-    
+
     currentTitle = 'Shoga Viewer';
     document.title = currentTitle;
     dom.gridArea.replaceChildren();
@@ -1770,19 +1785,19 @@ dom.btnHome.addEventListener('click', () => {
     switchToIdle();
 });
 
-dom.btnOpenFiles.addEventListener('click', () => { 
-    dom.openDropdown.classList.remove('active'); 
-    dirStack =[];
-    currentFolders =[];
-    dom.fallbackInputFiles.click(); 
+dom.btnOpenFiles.addEventListener('click', () => {
+    dom.openDropdown.classList.remove('active');
+    dirStack = [];
+    currentFolders = [];
+    dom.fallbackInputFiles.click();
 });
 
 async function processDirectoryHandle(handle, titleOverride = null) {
     showLoading('SCANNING DIRECTORY', 'Preparing...');
     try {
         const fileList = [];
-        currentFolders =[];
-        const fileEntries =[];
+        currentFolders = [];
+        const fileEntries = [];
         for await (const entry of handle.values()) {
             if (entry.kind === 'file') {
                 fileEntries.push(entry);
@@ -1793,7 +1808,7 @@ async function processDirectoryHandle(handle, titleOverride = null) {
         const CHUNK_SIZE = 100;
         const totalFiles = fileEntries.length;
         let processedCount = 0;
-        
+
         for (let i = 0; i < fileEntries.length; i += CHUNK_SIZE) {
             const chunk = fileEntries.slice(i, i + CHUNK_SIZE);
             const files = await Promise.all(chunk.map(async (entry) => {
@@ -1805,7 +1820,7 @@ async function processDirectoryHandle(handle, titleOverride = null) {
                 return null;
             }));
             fileList.push(...files.filter(f => f !== null));
-            
+
             processedCount += chunk.length;
             const percent = totalFiles > 0 ? Math.round((processedCount / totalFiles) * 100) : 0;
             updateLoading(`${processedCount} / ${totalFiles} (${percent}%)`);
@@ -1819,11 +1834,11 @@ async function processDirectoryHandle(handle, titleOverride = null) {
 async function handleDirectoryPicker() {
     try {
         const handle = await window.showDirectoryPicker();
-        dirStack =[{ handle: handle, name: handle.name }];
+        dirStack = [{ handle: handle, name: handle.name }];
         await saveDirHandle(handle);
         await renderRecents();
         await processDirectoryHandle(handle);
-    } catch(e) {
+    } catch (e) {
         pendingBookmarkRestoreId = null;
         switchToIdle();
     }
@@ -1868,37 +1883,61 @@ document.getElementById('jf-login-form').addEventListener('submit', async (e) =>
     dom.btnJfConnect.textContent = 'CONNECTING...';
     dom.jfError.style.display = 'none';
 
-    try {
-        if (typeof chrome !== 'undefined' && chrome.permissions) {
-            const granted = await new Promise(resolve => {
-                chrome.permissions.request({ origins: [url + '/*'] }, resolve);
+    const loginToken = Date.now();
+    dom.jellyfinModal.dataset.loginToken = loginToken;
+
+    let success = false;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+            if (typeof chrome !== 'undefined' && chrome.permissions) {
+                const granted = await new Promise(resolve => {
+                    chrome.permissions.request({ origins: [url + '/*'] }, resolve);
+                });
+                if (!granted) throw new Error('Permission denied by user.');
+            }
+
+            const authPayload = { Username: user, Pw: pass };
+            const authHeaders = {
+                'Content-Type': 'application/json',
+                'X-Emby-Authorization': 'MediaBrowser Client="Shoga Viewer", Device="Chrome", DeviceId="shoga-ext", Version="1.0.0"'
+            };
+
+            const res = await fetch(`${url}/Users/AuthenticateByName`, {
+                method: 'POST',
+                headers: authHeaders,
+                body: JSON.stringify(authPayload)
             });
-            if (!granted) throw new Error('Permission denied by user.');
+
+            if (!res.ok) throw new Error(`Auth failed (${res.status}). Check credentials.`);
+
+            const data = await res.json();
+            jellyfinConfig = {
+                serverUrl: url,
+                accessToken: data.AccessToken,
+                userId: data.User.Id
+            };
+
+            localStorage.setItem('shoga-jf-url', url);
+
+            success = true;
+            break;
+        } catch (err) {
+            lastError = err;
+            if (attempt < 5) {
+                dom.jfError.textContent = `Connection failed. Retrying in 2s... (${attempt}/5)`;
+                dom.jfError.style.display = 'block';
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                if (dom.jellyfinModal.dataset.loginToken != loginToken || !dom.jellyfinModal.classList.contains('active')) {
+                    return;
+                }
+            }
         }
+    }
 
-        const authPayload = { Username: user, Pw: pass };
-        const authHeaders = {
-            'Content-Type': 'application/json',
-            'X-Emby-Authorization': 'MediaBrowser Client="Shoga Viewer", Device="Chrome", DeviceId="shoga-ext", Version="1.0.0"'
-        };
-
-        const res = await fetch(`${url}/Users/AuthenticateByName`, {
-            method: 'POST',
-            headers: authHeaders,
-            body: JSON.stringify(authPayload)
-        });
-
-        if (!res.ok) throw new Error(`Auth failed (${res.status}). Check credentials.`);
-
-        const data = await res.json();
-        jellyfinConfig = {
-            serverUrl: url,
-            accessToken: data.AccessToken,
-            userId: data.User.Id
-        };
-
-        localStorage.setItem('shoga-jf-url', url);
-
+    if (success) {
         dom.jellyfinModal.classList.remove('active');
         if (pendingBookmarkRestoreId) {
             const idToRestore = pendingBookmarkRestoreId;
@@ -1907,11 +1946,12 @@ document.getElementById('jf-login-form').addEventListener('submit', async (e) =>
         } else {
             loadJellyfinFolder();
         }
-    } catch (err) {
-        console.error('[Jellyfin Connection Error]', err);
-        dom.jfError.textContent = err.name === 'TypeError' ? 'Network error. Check Server URL or Mixed Content (HTTP/HTTPS) block.' : err.message;
+        dom.btnJfConnect.disabled = false;
+        dom.btnJfConnect.textContent = 'CONNECT';
+    } else {
+        console.error('[Jellyfin Connection Error]', lastError);
+        dom.jfError.textContent = lastError.name === 'TypeError' ? 'Network error. Check Server URL or Mixed Content (HTTP/HTTPS) block.' : lastError.message;
         dom.jfError.style.display = 'block';
-    } finally {
         dom.btnJfConnect.disabled = false;
         dom.btnJfConnect.textContent = 'CONNECT';
     }
@@ -1935,10 +1975,12 @@ async function loadJellyfinFolder(parentId = null, folderName = 'Jellyfin') {
             throw new Error('Failed to fetch items.');
         }
 
+        updateLoading('Parsing data...');
+
         const data = await res.json();
-        
+
         const newFolders = [];
-        const newFiles =[];
+        const newFiles = [];
 
         data.Items.forEach(item => {
             if (item.IsFolder) {
@@ -1968,9 +2010,9 @@ async function loadJellyfinFolder(parentId = null, folderName = 'Jellyfin') {
         currentIndex = 0;
         isGridRendered = false;
         isSingleFileMode = false;
-        
+
         if (!parentId) {
-            dirStack =[{ isJellyfin: true, id: null, name: 'Jellyfin' }];
+            dirStack = [{ isJellyfin: true, id: null, name: 'Jellyfin' }];
         }
 
         lazyThumbnailObserver.disconnect();
@@ -1979,11 +2021,11 @@ async function loadJellyfinFolder(parentId = null, folderName = 'Jellyfin') {
         dom.viewerContent.replaceChildren();
         if (!dom.viewerContent.parentElement) dom.slots.curr.appendChild(dom.viewerContent);
         dom.slots.next.replaceChildren();
-        
+
         resetTransform(false);
         currentTitle = folderName;
         document.title = currentTitle;
-        
+
         dom.idleScreen.style.display = 'none';
         switchToGrid();
 
@@ -2014,23 +2056,23 @@ const handleFileInput = (e) => {
         processFileList(filesArr.filter(f => f.type.startsWith('image/') || f.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi|jpg|jpeg|png|gif|webp|avif|bmp|ico)$/i.test(f.name)), title);
         hideLoading();
     }
-    e.target.value = ''; 
+    e.target.value = '';
 };
 dom.fallbackInputFiles.addEventListener('change', handleFileInput);
 dom.fallbackInputDir.addEventListener('change', handleFileInput);
 
-dom.btnSettings.addEventListener('click', (e) => { 
-    e.stopPropagation(); 
+dom.btnSettings.addEventListener('click', (e) => {
+    e.stopPropagation();
     const isHidden = dom.settingsPanel.classList.contains('hidden');
     closeAllPanels();
     if (isHidden) {
-        dom.settingsPanel.classList.remove('hidden'); 
+        dom.settingsPanel.classList.remove('hidden');
         dom.btnSettings.setAttribute('aria-expanded', 'true');
     }
 });
 
 dom.btnInfo.addEventListener('click', (e) => {
-    e.stopPropagation(); 
+    e.stopPropagation();
     const isHidden = dom.infoPanel.classList.contains('hidden');
     closeAllPanels();
     if (isHidden) {
@@ -2039,8 +2081,8 @@ dom.btnInfo.addEventListener('click', (e) => {
     }
 });
 
-dom.btnBookmarks.addEventListener('click', (e) => { 
-    e.stopPropagation(); 
+dom.btnBookmarks.addEventListener('click', (e) => {
+    e.stopPropagation();
     const isActive = dom.bookmarksPanel.classList.contains('active');
     closeAllPanels();
     if (!isActive) {
@@ -2059,7 +2101,10 @@ dom.attributionLink.addEventListener('click', (e) => {
     if (isHidden) dom.licensePanel.classList.remove('hidden');
 });
 
+let lastPanelSwipeTime = 0;
+
 document.addEventListener('click', (e) => {
+    if (Date.now() - lastPanelSwipeTime < 100) return;
     if (!dom.settingsPanel.contains(e.target) && e.target !== dom.btnSettings) dom.settingsPanel.classList.add('hidden');
     if (!dom.infoPanel.contains(e.target) && e.target !== dom.btnInfo) dom.infoPanel.classList.add('hidden');
     if (!dom.licensePanel.contains(e.target) && e.target !== dom.attributionLink) dom.licensePanel.classList.add('hidden');
@@ -2080,7 +2125,7 @@ function bindGroup(ids, callback) {
 
 function applyViewerSettingChange(action) {
     if (action) action();
-    
+
     if (files.length > 0 && viewMode === 'VIEWER') {
         dom.viewerContent.querySelectorAll('.crossfade-clone').forEach(el => el.remove());
         dom.viewerContent.querySelectorAll('img').forEach(img => {
@@ -2104,18 +2149,18 @@ function applyViewerSettingChange(action) {
             });
             slot.replaceChildren();
         };
-        
+
         destroySlot(dom.viewerContent);
         destroySlot(dom.slots.prev);
         destroySlot(dom.slots.next);
     }
-    
+
     renderViewer();
 }
 
-bindGroup(['mode-single', 'mode-spread'], id => { 
+bindGroup(['mode-single', 'mode-spread'], id => {
     applyViewerSettingChange(() => {
-        const mode = id === 'mode-single' ? 'SINGLE' : 'SPREAD'; 
+        const mode = id === 'mode-single' ? 'SINGLE' : 'SPREAD';
         if (files.length > 0 && isVideoFile(files[currentIndex])) {
             videoLayoutMode = mode;
             localStorage.setItem('shoga-video-layout', mode);
@@ -2123,7 +2168,7 @@ bindGroup(['mode-single', 'mode-spread'], id => {
             imageLayoutMode = mode;
             localStorage.setItem('shoga-image-layout', mode);
         }
-        
+
         if (mode === 'SPREAD') {
             dom.coverSettingGroup.classList.add('visible');
         } else {
@@ -2131,34 +2176,37 @@ bindGroup(['mode-single', 'mode-spread'], id => {
         }
     });
 });
-bindGroup(['cover-inline', 'cover-isolated'], id => { 
+bindGroup(['cover-inline', 'cover-isolated'], id => {
     applyViewerSettingChange(() => {
-        firstPageCover = id === 'cover-isolated'; 
-    }); 
+        firstPageCover = id === 'cover-isolated';
+        localStorage.setItem('shoga-first-page-cover', firstPageCover);
+    });
 });
-bindGroup(['dir-ltr', 'dir-rtl'], id => { 
+bindGroup(['dir-ltr', 'dir-rtl'], id => {
     applyViewerSettingChange(() => {
-        readDir = id === 'dir-ltr' ? 'LTR' : 'RTL'; 
-    }); 
+        readDir = id === 'dir-ltr' ? 'LTR' : 'RTL';
+        localStorage.setItem('shoga-read-dir', readDir);
+    });
 });
-bindGroup(['fit-auto', 'fit-contain', 'fit-width', 'fit-height', 'fit-original'], id => { 
+bindGroup(['fit-auto', 'fit-contain', 'fit-width', 'fit-height', 'fit-original'], id => {
     applyViewerSettingChange(() => {
-        fitMode = id.replace('fit-', '').toUpperCase(); 
-    }); 
+        fitMode = id.replace('fit-', '').toUpperCase();
+        localStorage.setItem('shoga-fit-mode', fitMode);
+    });
 });
-bindGroup(['upscale-off', 'upscale-bilinear', 'upscale-adptv', 'upscale-anime4k', 'upscale-xbrz', 'upscale-fsr'], id => { 
+bindGroup(['upscale-off', 'upscale-bilinear', 'upscale-adptv', 'upscale-anime4k', 'upscale-xbrz', 'upscale-fsr'], id => {
     if (id === 'upscale-off') upscaleMode = 'OFF';
     else if (id === 'upscale-bilinear') upscaleMode = 'BILINEAR';
     else if (id === 'upscale-adptv') upscaleMode = 'ADPTV_SHOGA';
     else if (id === 'upscale-anime4k') upscaleMode = 'ANIME4K';
     else if (id === 'upscale-xbrz') upscaleMode = 'XBRZ';
     else upscaleMode = 'FSR';
-    
+
     console.log(`Mode changed to: ${upscaleMode}`);
     localStorage.setItem('shoga-upscale-mode', upscaleMode);
-    
+
     if (upscaleMode !== 'OFF') {
-        for (let[k, v] of upscaleCache.entries()) {
+        for (let [k, v] of upscaleCache.entries()) {
             if (v === 'error') upscaleCache.delete(k);
         }
         if (viewMode === 'VIEWER') {
@@ -2214,23 +2262,23 @@ function drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH) {
         gl.attachShader(program, vs);
         gl.attachShader(program, fs);
         gl.linkProgram(program);
-        
+
         gl.deleteShader(vs);
         gl.deleteShader(fs);
         _shaderCache.set(shaderHash, program);
     }
-    
+
     gl.useProgram(program);
 
     const positionBuffer = gl.createBuffer();
-    if (!positionBuffer || gl.getError() === gl.OUT_OF_MEMORY) { 
+    if (!positionBuffer || gl.getError() === gl.OUT_OF_MEMORY) {
         forceLoseContext(gl);
-        console.error('OOM creating buffer in drawWebGL'); throw new Error('OOM'); 
+        console.error('OOM creating buffer in drawWebGL'); throw new Error('OOM');
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-        -1, -1,  1, -1,  -1,  1,
-        -1,  1,  1, -1,   1,  1
+        -1, -1, 1, -1, -1, 1,
+        -1, 1, 1, -1, 1, 1
     ]), gl.STATIC_DRAW);
 
     const posLoc = gl.getAttribLocation(program, 'a_position');
@@ -2238,23 +2286,23 @@ function drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH) {
     gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
     const texture = gl.createTexture();
-    if (!texture || gl.getError() === gl.OUT_OF_MEMORY) { 
+    if (!texture || gl.getError() === gl.OUT_OF_MEMORY) {
         if (positionBuffer) gl.deleteBuffer(positionBuffer);
         forceLoseContext(gl);
-        console.error('OOM creating texture in drawWebGL'); throw new Error('OOM'); 
+        console.error('OOM creating texture in drawWebGL'); throw new Error('OOM');
     }
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    
+
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-    if (gl.getError() === gl.OUT_OF_MEMORY) { 
+    if (gl.getError() === gl.OUT_OF_MEMORY) {
         gl.deleteTexture(texture);
         gl.deleteBuffer(positionBuffer);
         forceLoseContext(gl);
-        console.error('OOM texImage2D in drawWebGL'); throw new Error('OOM'); 
+        console.error('OOM texImage2D in drawWebGL'); throw new Error('OOM');
     }
 
     gl.uniform1i(gl.getUniformLocation(program, 'u_image'), 0);
@@ -2338,18 +2386,18 @@ function renderFSR(img, canvas, cw, ch, texW, texH, sharpness = 2) {
             gl_FragColor = vec4(color, 1.0);
         }
     `;
-    
+
     const { program, texture, positionBuffer } = drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH);
     gl.uniform1f(gl.getUniformLocation(program, 'u_sharpness'), sharpness);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
-    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) { 
+    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) {
         gl.deleteTexture(texture);
         gl.deleteBuffer(positionBuffer);
         forceLoseContext(gl);
-        console.error('OOM or Context Lost in renderFSR'); throw new Error('OOM'); 
+        console.error('OOM or Context Lost in renderFSR'); throw new Error('OOM');
     }
-    
+
     const ctx = canvas.getContext('2d', { alpha: false });
     ctx.drawImage(gl.canvas, 0, 0, cw, ch);
 
@@ -2442,13 +2490,13 @@ function renderAntiJaggies(img, canvas, cw, ch, texW, texH) {
     const { program, texture, positionBuffer } = drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
-    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) { 
+    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) {
         gl.deleteTexture(texture);
         gl.deleteBuffer(positionBuffer);
         forceLoseContext(gl);
-        console.error('OOM or Context Lost in renderAntiJaggies'); throw new Error('OOM'); 
+        console.error('OOM or Context Lost in renderAntiJaggies'); throw new Error('OOM');
     }
-    
+
     const ctx = canvas.getContext('2d', { alpha: false });
     ctx.drawImage(gl.canvas, 0, 0, cw, ch);
 
@@ -2575,13 +2623,13 @@ function renderAdptvShogaPlus(img, canvas, cw, ch, texW, texH, scale) {
     gl.uniform1f(gl.getUniformLocation(program, 'u_scale'), scale);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
-    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) { 
+    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) {
         gl.deleteTexture(texture);
         gl.deleteBuffer(positionBuffer);
         forceLoseContext(gl);
-        console.error('OOM or Context Lost in renderAdptvShogaPlus'); throw new Error('OOM'); 
+        console.error('OOM or Context Lost in renderAdptvShogaPlus'); throw new Error('OOM');
     }
-    
+
     const ctx = canvas.getContext('2d', { alpha: false });
     ctx.drawImage(gl.canvas, 0, 0, cw, ch);
 
@@ -2632,13 +2680,13 @@ function renderAnime4KLite(img, canvas, cw, ch, texW, texH) {
     const { program, texture, positionBuffer } = drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
-    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) { 
+    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) {
         gl.deleteTexture(texture);
         gl.deleteBuffer(positionBuffer);
         forceLoseContext(gl);
-        console.error('OOM or Context Lost in renderAnime4KLite'); throw new Error('OOM'); 
+        console.error('OOM or Context Lost in renderAnime4KLite'); throw new Error('OOM');
     }
-    
+
     const ctx = canvas.getContext('2d', { alpha: false });
     ctx.drawImage(gl.canvas, 0, 0, cw, ch);
 
@@ -2700,13 +2748,13 @@ function renderXBRZLite(img, canvas, cw, ch, texW, texH) {
     const { program, texture, positionBuffer } = drawWebGL(gl, vsSource, fsSource, img, cw, ch, texW, texH);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
-    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) { 
+    if (gl.getError() === gl.OUT_OF_MEMORY || gl.isContextLost()) {
         gl.deleteTexture(texture);
         gl.deleteBuffer(positionBuffer);
         forceLoseContext(gl);
-        console.error('OOM or Context Lost in renderXBRZLite'); throw new Error('OOM'); 
+        console.error('OOM or Context Lost in renderXBRZLite'); throw new Error('OOM');
     }
-    
+
     const ctx = canvas.getContext('2d', { alpha: false });
     ctx.drawImage(gl.canvas, 0, 0, cw, ch);
 
@@ -2720,7 +2768,7 @@ function createStepDownscaledCanvas(srcImg, targetW, targetH) {
     if (curW === targetW && curH === targetH) {
         let c = document.createElement('canvas');
         c.width = targetW; c.height = targetH;
-        c.getContext('2d', {alpha:false}).drawImage(srcImg, 0, 0);
+        c.getContext('2d', { alpha: false }).drawImage(srcImg, 0, 0);
         return c;
     }
     let curCanvas = document.createElement('canvas');
@@ -2837,7 +2885,7 @@ async function performUpscale(srcImg, actualMode, renderRatio, targetRatio, nw, 
             await new Promise(r => setTimeout(r, 0));
         }
     }
-    
+
     chunkCanvas.width = 0;
     chunkCanvas.height = 0;
     upChunkCanvas.width = 0;
@@ -2864,13 +2912,13 @@ async function processNextPreload() {
     let MAX_PRELOAD = isLowEndHardware ? 2 : 16;
     let actualMode = upscaleMode;
     let isBilinear = actualMode === 'BILINEAR';
-    let preloadLogQueue =[];
-    
+    let preloadLogQueue = [];
+
     for (let i = 1; i <= MAX_PRELOAD; i++) {
         let rightIdx = currentIndex + i;
         let leftIdx = currentIndex - i;
-        let checkOrder = readDir === 'LTR' ?[rightIdx, leftIdx] :[leftIdx, rightIdx];
-        
+        let checkOrder = readDir === 'LTR' ? [rightIdx, leftIdx] : [leftIdx, rightIdx];
+
         for (let idx of checkOrder) {
             if (idx >= 0 && idx < files.length) {
                 if (files[idx] && files[idx].isBroken) continue;
@@ -2881,10 +2929,10 @@ async function processNextPreload() {
                     preloadLogQueue.push(` -> Skipped (Anim/Video)`);
                     continue;
                 }
-                
+
                 const origUrl = getFileUrl(idx);
                 let checkRatio = (isHighMemMode && is4xEnabled && !isBilinear && actualMode !== 'ADPTV_SHOGA') ? 4.0 : (isBilinear ? 1.0 : 2.0);
-                
+
                 if (actualMode === 'ADPTV_SHOGA') {
                     if (files[idx].nw) {
                         let displayW = window.innerWidth * currentZoom;
@@ -2898,7 +2946,7 @@ async function processNextPreload() {
                         }
                         checkRatio = Math.round(checkRatio * 10) / 10;
                     } else {
-                        checkRatio = -1; 
+                        checkRatio = -1;
                     }
                 }
 
@@ -2907,7 +2955,7 @@ async function processNextPreload() {
                     needsProcessing = false;
                     preloadLogQueue.push(` -> Needs Dimension Data`);
                 } else {
-                    for (let[key, cacheVal] of upscaleCache.entries()) {
+                    for (let [key, cacheVal] of upscaleCache.entries()) {
                         if (key.startsWith(origUrl + '_' + actualMode + '_')) {
                             let cachedRatio = parseFloat(key.split('_').pop());
                             if (!isNaN(cachedRatio) && cachedRatio >= checkRatio) {
@@ -2939,7 +2987,7 @@ async function processNextPreload() {
 
     if (targetIndex === -1) {
         isPreloading = false;
-        return; 
+        return;
     }
 
     const idx = targetIndex;
@@ -2986,7 +3034,7 @@ async function processNextPreload() {
             let dRatio = displayW / nw;
             currentRatio = Math.ceil(dRatio * 10) / 10;
             if (currentRatio < 0.1) currentRatio = 0.1;
-            
+
             const maxArea = getDynamicMaxArea();
             while ((nw * currentRatio * nh * currentRatio > maxArea || nw * currentRatio > 16384 || nh * currentRatio > 16384) && currentRatio > 1.0) {
                 currentRatio = Math.max(1.0, currentRatio - 0.1);
@@ -3081,7 +3129,7 @@ async function processNextPreload() {
                                     }
                                 }
                                 resolve(resCanvas);
-                            } catch(e) { reject(e); }
+                            } catch (e) { reject(e); }
                         },
                         () => resolve(null)
                     );
@@ -3109,10 +3157,10 @@ async function processNextPreload() {
                 preloadQueueTimer = setTimeout(processNextPreload, 50);
                 return;
             }
-            
+
             const fileType = files[idx].type;
             const mime = (fileType === 'image/png' || fileType === 'image/webp' || fileType === 'image/gif') ? 'image/png' : 'image/jpeg';
-            
+
             finalCanvas.toBlob(blob => {
                 finalCanvas.width = 0; finalCanvas.height = 0;
                 if (!blob) {
@@ -3128,7 +3176,7 @@ async function processNextPreload() {
                     for (let i = Math.max(0, currentIndex - 2); i <= Math.min(files.length - 1, currentIndex + 2); i++) {
                         if (urlCache.has(i)) activeUrls.add(urlCache.get(i));
                     }
-                    for (const[k, v] of upscaleCache.entries()) {
+                    for (const [k, v] of upscaleCache.entries()) {
                         if (v !== 'processing') {
                             const origUrl = k.split('_')[0];
                             if (!activeUrls.has(origUrl)) {
@@ -3157,7 +3205,7 @@ async function processNextPreload() {
         console.error('Preload failed to load source image:', origUrl, err);
         const cacheKey = origUrl + '_' + actualMode + '_' + originalTargetRatio;
         if (upscaleCache.get(cacheKey) === 'processing') upscaleCache.delete(cacheKey);
-        upscaleCache.set(cacheKey, 'error'); 
+        upscaleCache.set(cacheKey, 'error');
         preloadQueueTimer = setTimeout(processNextPreload, 50);
     };
     srcImg.src = origUrl;
@@ -3172,7 +3220,7 @@ function startPreloadQueue() {
 
 const executeCrossfadeSwap = (img, targetUrl, tierName) => {
     if (!img.parentElement) return;
-    
+
     if (img.src === targetUrl || img.dataset.pendingSwapUrl === targetUrl) {
         if (img.src === targetUrl) {
             if (tierName) {
@@ -3201,7 +3249,7 @@ const executeCrossfadeSwap = (img, targetUrl, tierName) => {
                 overlay.className = img.className;
                 overlay.classList.add('crossfade-clone');
                 if (tierName) overlay.dataset.upscaleAppliedTier = tierName;
-                
+
                 overlay.style.cssText = img.style.cssText;
                 overlay.style.position = 'absolute';
                 overlay.style.width = img.offsetWidth + 'px';
@@ -3259,7 +3307,7 @@ const executeCrossfadeSwap = (img, targetUrl, tierName) => {
         if (!img.parentElement || !img.isConnected) return;
 
         img.parentElement.style.position = 'relative';
-        
+
         const overlay = new Image();
         overlay.src = targetUrl;
         overlay.className = img.className;
@@ -3267,9 +3315,9 @@ const executeCrossfadeSwap = (img, targetUrl, tierName) => {
         if (tierName) {
             overlay.dataset.upscaleAppliedTier = tierName;
         }
-        
+
         const computedStyle = window.getComputedStyle(img);
-        
+
         overlay.style.cssText = img.style.cssText;
         overlay.style.position = 'absolute';
         overlay.style.width = img.offsetWidth + 'px';
@@ -3282,9 +3330,9 @@ const executeCrossfadeSwap = (img, targetUrl, tierName) => {
         overlay.style.pointerEvents = 'none';
         overlay.style.objectFit = computedStyle.objectFit;
         overlay.style.objectPosition = computedStyle.objectPosition;
-        
+
         img.parentElement.appendChild(overlay);
-        
+
         overlay.decode().then(() => {
             if (!img.isConnected) {
                 if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
@@ -3294,9 +3342,9 @@ const executeCrossfadeSwap = (img, targetUrl, tierName) => {
                 if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
                 return;
             }
-            
+
             void overlay.offsetWidth;
-            
+
             overlay.style.opacity = '1';
             setTimeout(() => {
                 if (!img.isConnected) {
@@ -3312,7 +3360,7 @@ const executeCrossfadeSwap = (img, targetUrl, tierName) => {
                         delete img.dataset.upscaleAppliedTier;
                         delete img.dataset.upscaleProcessingKey;
                     }
-                    
+
                     img.decode().then(() => {
                         if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
                     }).catch(() => {
@@ -3366,7 +3414,7 @@ function applyUpscaleOverlays() {
         if (el) el.style.display = 'none';
     });
 
-    let overlayLogQueue =[];
+    let overlayLogQueue = [];
 
     Promise.all(Array.from(imgs).map(async (img) => {
         const fIdx = parseInt(img.dataset.fileIndex);
@@ -3417,7 +3465,7 @@ function applyUpscaleOverlays() {
             let dynamicRatio = displayW / nw;
             targetRatio = Math.ceil(dynamicRatio * 10) / 10;
             if (targetRatio < 0.1) targetRatio = 0.1;
-            
+
             const maxArea = getDynamicMaxArea();
             while ((nw * targetRatio * nh * targetRatio > maxArea || nw * targetRatio > 16384 || nh * targetRatio > 16384) && targetRatio > 1.0) {
                 targetRatio = Math.max(1.0, targetRatio - 0.1);
@@ -3456,7 +3504,7 @@ function applyUpscaleOverlays() {
         let isProcessingHigher = false;
         let hasSkippedOrError = false;
 
-        for (let[key, cacheVal] of upscaleCache.entries()) {
+        for (let [key, cacheVal] of upscaleCache.entries()) {
             if (key.startsWith(img.dataset.originalUrl + '_' + actualMode + '_')) {
                 let cachedRatio = parseFloat(key.split('_').pop());
                 if (!isNaN(cachedRatio) && cachedRatio >= targetRatio) {
@@ -3582,7 +3630,7 @@ function applyUpscaleOverlays() {
                                             }
                                         }
                                         resolve(resCanvas);
-                                    } catch(e) { reject(e); }
+                                    } catch (e) { reject(e); }
                                 },
                                 () => resolve(null)
                             );
@@ -3671,7 +3719,7 @@ function applyUpscaleOverlays() {
                                 for (let i = Math.max(0, currentIndex - 2); i <= Math.min(files.length - 1, currentIndex + 2); i++) {
                                     if (urlCache.has(i)) activeUrls.add(urlCache.get(i));
                                 }
-                                for (const[k, v] of upscaleCache.entries()) {
+                                for (const [k, v] of upscaleCache.entries()) {
                                     if (v !== 'processing') {
                                         const origUrl = k.split('_')[0];
                                         if (!activeUrls.has(origUrl)) {
@@ -3764,27 +3812,27 @@ function applyUpscaleOverlays() {
 
 function processFileList(fileList, title) {
     destroyAllHls();
-    urlCache.forEach(url => { if(url.startsWith('blob:')) URL.revokeObjectURL(url); });
+    urlCache.forEach(url => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); });
     urlCache.clear();
-    
-    upscaleCache.forEach(url => { if(url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
+
+    upscaleCache.forEach(url => { if (url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
     upscaleCache.clear();
 
     files = fileList.sort(fileSortFn);
-    
+
     currentIndex = 0;
-    isGridRendered = false; 
-    isSingleFileMode = false; 
-    
+    isGridRendered = false;
+    isSingleFileMode = false;
+
     lazyThumbnailObserver.disconnect();
     dom.gridArea.replaceChildren();
     dom.slots.prev.replaceChildren();
     dom.viewerContent.replaceChildren();
     if (!dom.viewerContent.parentElement) dom.slots.curr.appendChild(dom.viewerContent);
     dom.slots.next.replaceChildren();
-    
+
     resetTransform(false);
-    
+
     if (title) {
         currentTitle = title;
         documentTitle = currentTitle;
@@ -3792,27 +3840,27 @@ function processFileList(fileList, title) {
         currentTitle = 'Shoga Viewer';
         document.title = currentTitle;
     }
-    
-    if (files.length > 0 || currentFolders.length > 0) { 
-        dom.idleScreen.style.display = 'none'; 
+
+    if (files.length > 0 || currentFolders.length > 0) {
+        dom.idleScreen.style.display = 'none';
         const idleTitle = dom.idleScreen.querySelector('h1');
         const idleDesc = dom.idleScreen.querySelector('p');
         if (idleTitle) idleTitle.textContent = 'SHOGA';
         if (idleDesc) idleDesc.textContent = 'VISUAL INTELLIGENCE ENGINE';
-        
+
         if (pendingBookmarkRestoreId) {
             const id = pendingBookmarkRestoreId;
             pendingBookmarkRestoreId = null;
             restoreBookmark(id);
         } else {
-            switchToGrid(); 
+            switchToGrid();
         }
     }
 }
 
 function switchToGrid() {
     destroyAllHls();
-    pointers =[]; isPanning = false; isDragging = false; isGridSwiping = false; isGridPulling = false; initialDistance = 0;
+    pointers = []; isPanning = false; isDragging = false; isGridSwiping = false; isGridPulling = false; initialDistance = 0;
     viewMode = 'GRID';
     dom.body.classList.remove('ui-hidden');
     dom.gridArea.style.display = 'grid';
@@ -3820,7 +3868,7 @@ function switchToGrid() {
     dom.btnGrid.style.display = 'none';
     dom.btnInfo.style.display = 'none';
     dom.btnSave.style.display = 'none';
-    
+
     if (isGridRendered) {
         const currentItem = dom.gridArea.querySelector(`.grid-item[data-index="${currentIndex}"]`);
         if (currentItem) {
@@ -3828,17 +3876,17 @@ function switchToGrid() {
         }
         return;
     }
-    
+
     lazyThumbnailObserver.disconnect();
     dom.gridArea.innerHTML = '';
-    
+
     const headerContainer = document.createElement('div');
     headerContainer.style.gridColumn = '1 / -1';
     headerContainer.style.display = 'flex';
     headerContainer.style.justifyContent = 'space-between';
     headerContainer.style.alignItems = 'center';
     headerContainer.style.marginBottom = '15px';
-    
+
     const titleSpan = document.createElement('span');
     titleSpan.textContent = currentTitle;
     titleSpan.style.fontSize = '0.85rem';
@@ -3864,7 +3912,7 @@ function switchToGrid() {
         filterInput.placeholder = type === 'folder' ? 'Folder...' : 'File...';
         filterInput.value = type === 'folder' ? folderFilterText : fileFilterText;
         filterInput.style.paddingRight = '26px';
-        
+
         const clearBtn = document.createElement('button');
         clearBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
         clearBtn.style.position = 'absolute';
@@ -3877,7 +3925,7 @@ function switchToGrid() {
         clearBtn.style.opacity = (type === 'folder' ? folderFilterText : fileFilterText) ? '1' : '0';
         clearBtn.style.transition = 'opacity 0.2s, color 0.2s';
         clearBtn.style.pointerEvents = (type === 'folder' ? folderFilterText : fileFilterText) ? 'auto' : 'none';
-        
+
         clearBtn.addEventListener('mouseover', () => clearBtn.style.color = 'var(--text-primary)');
         clearBtn.addEventListener('mouseout', () => clearBtn.style.color = 'var(--text-secondary)');
 
@@ -3895,7 +3943,7 @@ function switchToGrid() {
             let filterId = type === 'folder' ? 'folder-filter-style' : 'file-filter-style';
             let targetClass = type === 'folder' ? '.folder-item' : '.grid-item';
             let currentText = type === 'folder' ? folderFilterText : fileFilterText;
-            
+
             let styleEl = document.getElementById(filterId);
             if (!styleEl) {
                 styleEl = document.createElement('style');
@@ -3910,7 +3958,7 @@ function switchToGrid() {
             }
         };
 
-        applyFilter(); 
+        applyFilter();
 
         filterInput.addEventListener('input', (e) => {
             if (type === 'folder') folderFilterText = e.target.value;
@@ -3936,7 +3984,7 @@ function switchToGrid() {
     if (currentFolders.length > 0) {
         const sortGroup = document.createElement('div');
         sortGroup.className = 'folder-sort-group';
-        
+
         const createSortBtn = (mode, svgPath) => {
             const b = document.createElement('button');
             b.className = `folder-sort-btn ${folderSortMode === mode ? 'active' : ''}`;
@@ -3951,7 +3999,7 @@ function switchToGrid() {
 
         sortGroup.appendChild(createSortBtn('name-asc', '<path d="M6 3v18"></path><path d="M10 7l-4-4-4 4"></path><path d="M20 5h-5"></path><path d="M19 11h-4"></path><path d="M18 17h-4"></path>'));
         sortGroup.appendChild(createSortBtn('name-desc', '<path d="M6 21V3"></path><path d="M10 17l-4 4-4-4"></path><path d="M20 5h-5"></path><path d="M19 11h-4"></path><path d="M18 17h-4"></path>'));
-        
+
         controlsWrapper.appendChild(sortGroup);
         controlsWrapper.appendChild(createSearchFilter('folder'));
     }
@@ -3959,7 +4007,7 @@ function switchToGrid() {
     if (files.length > 0) {
         const fileSortGroup = document.createElement('div');
         fileSortGroup.className = 'folder-sort-group';
-        
+
         const createFileSortBtn = (mode, svgPath) => {
             const b = document.createElement('button');
             b.className = `folder-sort-btn ${fileSortMode === mode ? 'active' : ''}`;
@@ -3967,20 +4015,20 @@ function switchToGrid() {
             b.addEventListener('click', () => {
                 if (fileSortMode === mode) return;
                 fileSortMode = mode;
-                
+
                 const currentFile = files[currentIndex];
                 files.sort(fileSortFn);
-                
+
                 if (currentFile) {
                     const newIndex = files.findIndex(f => f.name === currentFile.name);
                     if (newIndex !== -1) currentIndex = newIndex;
                 }
-                
-                urlCache.forEach(url => { if(url.startsWith('blob:')) URL.revokeObjectURL(url); });
+
+                urlCache.forEach(url => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); });
                 urlCache.clear();
-                upscaleCache.forEach(url => { if(url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
+                upscaleCache.forEach(url => { if (url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
                 upscaleCache.clear();
-                
+
                 isGridRendered = false;
                 switchToGrid();
             });
@@ -3989,7 +4037,7 @@ function switchToGrid() {
 
         fileSortGroup.appendChild(createFileSortBtn('name-asc', '<path d="M6 3v18"></path><path d="M10 7l-4-4-4 4"></path><path d="M20 5h-5"></path><path d="M19 11h-4"></path><path d="M18 17h-4"></path>'));
         fileSortGroup.appendChild(createFileSortBtn('name-desc', '<path d="M6 21V3"></path><path d="M10 17l-4 4-4-4"></path><path d="M20 5h-5"></path><path d="M19 11h-4"></path><path d="M18 17h-4"></path>'));
-        
+
         controlsWrapper.appendChild(fileSortGroup);
         controlsWrapper.appendChild(createSearchFilter('file'));
     }
@@ -4017,7 +4065,7 @@ function switchToGrid() {
 
     headerContainer.appendChild(controlsWrapper);
     dom.gridArea.appendChild(headerContainer);
-    
+
     if (currentFolders.length > 0) {
         const folderContainer = document.createElement('div');
         folderContainer.style.gridColumn = '1 / -1';
@@ -4025,17 +4073,17 @@ function switchToGrid() {
         folderContainer.style.flexWrap = 'wrap';
         folderContainer.style.gap = '10px';
         folderContainer.style.marginBottom = '20px';
-        
-        let displayFolders =[...currentFolders];
-        if (folderSortMode === 'name-asc') displayFolders.sort((a,b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
-        else if (folderSortMode === 'name-desc') displayFolders.sort((a,b) => b.name.localeCompare(a.name, undefined, {numeric: true}));
+
+        let displayFolders = [...currentFolders];
+        if (folderSortMode === 'name-asc') displayFolders.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+        else if (folderSortMode === 'name-desc') displayFolders.sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true }));
 
         displayFolders.forEach(folder => {
             const folderItem = document.createElement('div');
             folderItem.className = 'folder-item';
-            
-            folderItem.dataset.search = folder.name.toLowerCase(); 
-            
+
+            folderItem.dataset.search = folder.name.toLowerCase();
+
             folderItem.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> <span>${escapeHtml(folder.name)}</span>`;
             folderItem.addEventListener('click', async () => {
                 if (dirStack.length > 0) {
@@ -4071,7 +4119,7 @@ function switchToGrid() {
         item.dataset.index = index;
         item.dataset.search = file.name.toLowerCase();
         const canvas = document.createElement('canvas');
-        canvas.fileData = file; 
+        canvas.fileData = file;
         const badge = document.createElement('div');
         badge.className = 'index-badge';
         badge.textContent = index + 1;
@@ -4106,13 +4154,14 @@ const GRID_PTR_THRESHOLD = 80;
 
 let gridSwipeStartX = 0;
 let gridSwipeStartY = 0;
+let gridSwipeStartTime = 0;
 let isGridSwiping = false;
 
 let gridTicking = false;
 function updateGridUI() {
     if (isGridSwiping && dirStack.length > 1 && !isGridPulling) {
         const dx = pointers[0]?.clientX - gridSwipeStartX || 0;
-        if (dx > 10) dom.gridArea.style.transform = `translateX(${dx - 10}px)`;
+        if (dx > 10) dom.gridArea.style.transform = `translateX(${(dx - 10) * 0.65}px)`;
     } else if (isGridPulling) {
         dom.gridArea.style.transform = `translateY(${gridPtrDistance}px)`;
         dom.ptrIndicator.style.opacity = Math.min(gridPtrDistance / GRID_PTR_THRESHOLD, 1);
@@ -4122,6 +4171,10 @@ function updateGridUI() {
 }
 
 dom.gridArea.addEventListener('pointerdown', (e) => {
+    if (dom.bookmarksPanel.classList.contains('active')) {
+        const rect = dom.bookmarksPanel.getBoundingClientRect();
+        if (e.clientX >= rect.left - 300) return;
+    }
     if (viewMode === 'GRID') {
         if (dom.gridArea.scrollTop <= 0) {
             isGridPulling = true;
@@ -4132,8 +4185,9 @@ dom.gridArea.addEventListener('pointerdown', (e) => {
             isGridSwiping = true;
             gridSwipeStartX = e.clientX;
             gridSwipeStartY = e.clientY;
+            gridSwipeStartTime = Date.now();
             dom.gridArea.style.transition = 'none';
-            try { e.target.setPointerCapture(e.pointerId); } catch(err) {}
+            try { e.target.setPointerCapture(e.pointerId); } catch (err) { }
         }
         const existingIdx = pointers.findIndex(p => p.pointerId === e.pointerId);
         if (existingIdx !== -1) {
@@ -4156,7 +4210,7 @@ dom.gridArea.addEventListener('pointermove', (e) => {
     if (isGridSwiping && dirStack.length > 1) {
         const dx = e.clientX - gridSwipeStartX;
         const dy = Math.abs(e.clientY - gridSwipeStartY);
-        
+
         if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 5) {
             if (e.cancelable) e.preventDefault();
             if (dx > 0 && isGridPulling) {
@@ -4179,13 +4233,13 @@ dom.gridArea.addEventListener('pointermove', (e) => {
 
     if (!isGridPulling) return;
     const dy = e.clientY - gridPtrStartY;
-    
+
     if (dy > 0 && dom.gridArea.scrollTop <= 0) {
         if (!dom.gridArea.classList.contains('pulling')) {
             dom.gridArea.classList.add('pulling');
             dom.ptrIndicator.style.display = 'block';
         }
-        gridPtrDistance = dy * 0.4; 
+        gridPtrDistance = dy * 0.4;
         if (!gridTicking) {
             requestAnimationFrame(updateGridUI);
             gridTicking = true;
@@ -4212,12 +4266,15 @@ dom.gridArea.addEventListener('touchmove', (e) => {
 const endGridPull = async (e) => {
     if (isGridSwiping && e && e.clientX !== undefined) {
         isGridSwiping = false;
-        try { e.target.releasePointerCapture(e.pointerId); } catch(err) {}
-        
+        try { e.target.releasePointerCapture(e.pointerId); } catch (err) { }
+
         const dx = e.clientX - gridSwipeStartX;
-        dom.gridArea.style.transition = 'transform 0.3s ease-out';
-        
-        if (dx > 70) {
+        const dt = Date.now() - gridSwipeStartTime;
+        const velocity = dt > 0 ? dx / dt : 0;
+
+        dom.gridArea.style.transition = 'transform 0.4s cubic-bezier(0.25, 1, 0.5, 1)';
+
+        if (dx > 70 || (dx > 30 && velocity > 0.6)) {
             isGridPulling = false;
             dom.gridArea.classList.remove('pulling');
             dom.gridArea.style.transform = `translateX(100vw)`;
@@ -4232,10 +4289,10 @@ const endGridPull = async (e) => {
                     } else {
                         await processDirectoryHandle(parent.handle, parent.name);
                     }
-                    
+
                     dom.gridArea.style.transition = 'none';
                     dom.gridArea.style.transform = 'translateX(-15vw)';
-                    
+
                     requestAnimationFrame(() => {
                         dom.gridArea.scrollTop = parent.scrollTop || 0;
                         void dom.gridArea.offsetWidth;
@@ -4254,9 +4311,9 @@ const endGridPull = async (e) => {
             return;
         } else {
             dom.gridArea.style.transform = 'translateX(0px)';
-            setTimeout(() => { 
-                dom.gridArea.style.transform = ''; 
-                dom.gridArea.style.transition = ''; 
+            setTimeout(() => {
+                dom.gridArea.style.transform = '';
+                dom.gridArea.style.transition = '';
             }, 300);
         }
     } else {
@@ -4266,12 +4323,12 @@ const endGridPull = async (e) => {
     if (!isGridPulling && !dom.gridArea.classList.contains('pulling')) return;
     isGridPulling = false;
     dom.gridArea.classList.remove('pulling');
-    
+
     if (gridPtrDistance >= GRID_PTR_THRESHOLD) {
         dom.ptrIndicator.style.transition = 'transform 0.5s linear';
         dom.ptrIndicator.style.transform = `translateX(-50%) rotate(360deg)`;
         dom.gridArea.style.transform = `translateY(${GRID_PTR_THRESHOLD / 2}px)`;
-        
+
         if (dirStack.length > 0) {
             const current = dirStack[dirStack.length - 1];
             if (current.isJellyfin) {
@@ -4288,12 +4345,12 @@ const endGridPull = async (e) => {
         } else {
             await new Promise(r => setTimeout(r, 400));
         }
-        
+
         dom.ptrIndicator.style.opacity = 0;
         dom.gridArea.style.transform = 'translateY(0px)';
-        setTimeout(() => { 
-            dom.ptrIndicator.style.display = 'none'; 
-            dom.ptrIndicator.style.transition = ''; 
+        setTimeout(() => {
+            dom.ptrIndicator.style.display = 'none';
+            dom.ptrIndicator.style.transition = '';
         }, 300);
     } else {
         dom.ptrIndicator.style.opacity = 0;
@@ -4309,7 +4366,7 @@ dom.gridArea.addEventListener('pointerleave', endGridPull);
 
 function switchToViewer() {
     if (viewMode !== 'VIEWER') history.pushState({ view: 'VIEWER' }, '');
-    pointers =[]; isPanning = false; isDragging = false; isGridSwiping = false; isGridPulling = false; initialDistance = 0;
+    pointers = []; isPanning = false; isDragging = false; isGridSwiping = false; isGridPulling = false; initialDistance = 0;
     viewMode = 'VIEWER';
     dom.gridArea.style.display = 'none';
     dom.viewerArea.style.display = 'block';
@@ -4321,19 +4378,19 @@ function switchToViewer() {
 }
 
 function getSpreadGroup(index) {
-    if (index < 0 || index >= files.length) return[];
+    if (index < 0 || index >= files.length) return [];
     const mode = isVideoFile(files[index]) ? videoLayoutMode : imageLayoutMode;
     if (mode === 'SINGLE') return [index];
 
-    if (firstPageCover && index === 0) return[0];
+    if (firstPageCover && index === 0) return [0];
 
     const offset = firstPageCover ? 1 : 0;
     const adjIndex = index - offset;
     const groupStart = Math.floor(adjIndex / 2) * 2 + offset;
-    
-    const group =[groupStart];
+
+    const group = [groupStart];
     if (groupStart + 1 < files.length) group.push(groupStart + 1);
-    
+
     return group;
 }
 
@@ -4349,7 +4406,7 @@ function updateInfoPanel() {
     if (files.length === 0 || viewMode !== 'VIEWER') return;
 
     const rawGroup = getSpreadGroup(currentIndex);
-    let indices =[...rawGroup];
+    let indices = [...rawGroup];
     const mode = getCurrentLayoutMode();
     if (mode === 'SPREAD' && indices.length === 2 && readDir === 'RTL') {
         indices.reverse();
@@ -4358,16 +4415,18 @@ function updateInfoPanel() {
     let html = '';
     indices.forEach((idx, i) => {
         const f = files[idx];
-        const sizeMB = (f.size / (1024 * 1024)).toFixed(2);
-        
+
+        let sizeDisplay = (f.size / (1024 * 1024)).toFixed(2) + ' MB';
+        if (f.size === 0 && f.isJellyfin) sizeDisplay = 'Unknown (Server Stream)';
+
         if (mode === 'SPREAD' && indices.length === 2) {
             html += `<div class="panel-title">${i === 0 ? 'LEFT PAGE' : 'RIGHT PAGE'}</div>`;
         }
-        
+
         html += `<div class="info-row"><span class="info-label">FILENAME</span><span class="info-value">${escapeHtml(f.name)}</span></div>
-                 <div class="info-row"><span class="info-label">SIZE</span><span class="info-value">${sizeMB} MB</span></div>
+                 <div class="info-row"><span class="info-label">SIZE</span><span class="info-value">${sizeDisplay}</span></div>
                  <div class="info-row"><span class="info-label">INDEX</span><span class="info-value">${idx + 1} / ${files.length}</span></div>`;
-        
+
         if (i < indices.length - 1) {
             html += `<div class="info-divider"></div>`;
         }
@@ -4377,15 +4436,15 @@ function updateInfoPanel() {
 }
 
 function populateSlot(slot, targetIndex, token = null, onComplete = null) {
-    let loadPromises =[];
+    let loadPromises = [];
     if (targetIndex < 0 || targetIndex >= files.length) {
         slot.replaceChildren();
         if (onComplete) onComplete();
         return;
     }
-    
+
     const rawGroup = getSpreadGroup(targetIndex);
-    let indices =[...rawGroup];
+    let indices = [...rawGroup];
     const mode = getCurrentLayoutMode();
 
     if (mode === 'SPREAD' && indices.length === 2) {
@@ -4444,7 +4503,7 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
             const isVideo = files[idx] && (files[idx].type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(files[idx].name));
             const mediaEl = document.createElement(isVideo ? 'video' : 'img');
             const url = getFileUrl(idx);
-            
+
             if (mode === 'SPREAD' && indices.length === 2) {
                 mediaEl.className = i === 0 ? 'spread-left' : 'spread-right';
             } else {
@@ -4454,7 +4513,7 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
             mediaEl.dataset.fileIndex = idx;
             mediaEl.dataset.originalUrl = url;
             mediaEl.classList.add('shoga-main-media');
-            
+
             let placeholder = null;
             let placeholderSrc = null;
             const gridCanvas = document.querySelector(`.grid-item[data-index="${idx}"] canvas.loaded`);
@@ -4467,21 +4526,21 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
             if (placeholderSrc) {
                 placeholder = document.createElement('img');
                 networkTasks.push({ idx, isPlaceholder: true, execute: () => { placeholder.src = placeholderSrc; } });
-                
+
                 placeholder.className = mediaEl.className;
                 placeholder.classList.remove('shoga-main-media');
                 placeholder.classList.add('shoga-placeholder');
 
                 let customCss = 'position:absolute; z-index:-1; filter:blur(10px); opacity:0.5; transition:opacity 0.3s; pointer-events:none; ';
-                
+
                 if (mode === 'SPREAD' && indices.length === 2) {
                     if (fitMode === 'WIDTH') {
-                        customCss += i === 0 
-                            ? 'width:50%; height:auto; left:0; top:auto; bottom:auto; object-fit:contain; object-position:right center;' 
+                        customCss += i === 0
+                            ? 'width:50%; height:auto; left:0; top:auto; bottom:auto; object-fit:contain; object-position:right center;'
                             : 'width:50%; height:auto; right:0; top:auto; bottom:auto; object-fit:contain; object-position:left center;';
                     } else {
-                        customCss += i === 0 
-                            ? 'width:50%; height:100%; left:0; top:0; object-fit:contain; object-position:right center;' 
+                        customCss += i === 0
+                            ? 'width:50%; height:100%; left:0; top:0; object-fit:contain; object-position:right center;'
                             : 'width:50%; height:100%; right:0; top:0; object-fit:contain; object-position:left center;';
                     }
                 } else {
@@ -4495,56 +4554,63 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                         customCss += 'width:100%; height:100%; left:0; top:0; object-fit:contain; object-position:center;';
                     }
                 }
-                
+
                 placeholder.style.cssText = customCss;
                 slot.style.position = 'relative';
                 slot.appendChild(placeholder);
                 mediaEl._placeholder = placeholder;
             }
-            
+
             if (isVideo) {
                 mediaEl.controls = true;
                 mediaEl.playsInline = true;
                 mediaEl.loop = true;
                 mediaEl.muted = true;
-                
-                mediaEl.addEventListener('loadeddata', function() {
+
+                mediaEl.addEventListener('loadeddata', function () {
                     if (this._placeholder) {
-                        this._placeholder.style.opacity = '0';
-                        setTimeout(() => { if (this._placeholder && this._placeholder.parentNode) this._placeholder.parentNode.removeChild(this._placeholder); }, 300);
+                        const ph = this._placeholder;
                         delete this._placeholder;
+                        setTimeout(() => {
+                            if (ph && ph.parentNode) {
+                                ph.style.opacity = '0';
+                                setTimeout(() => { if (ph && ph.parentNode) ph.parentNode.removeChild(ph); }, 300);
+                            }
+                        }, 250);
                     }
                 }, { once: true });
 
-                networkTasks.push({ idx, isPlaceholder: false, execute: () => {
-                    if (url.includes('.m3u8')) {
-                        if (window.Hls && Hls.isSupported()) {
-                            const hls = new Hls({ startLevel: -1 });
-                            hls.attachMedia(mediaEl);
-                            hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-                                hls.loadSource(url);
-                            });
-                            hls.on(Hls.Events.ERROR, (event, data) => {
-                                if (data.fatal) {
-                                    hls.destroy();
-                                    mediaEl.src = url.replace('master.m3u8', 'stream.mp4');
-                                }
-                            });
-                            mediaEl.hlsInstance = hls;
-                        } else if (mediaEl.canPlayType('application/vnd.apple.mpegurl')) {
-                            mediaEl.src = url;
+                networkTasks.push({
+                    idx, isPlaceholder: false, execute: () => {
+                        if (url.includes('.m3u8')) {
+                            if (window.Hls && Hls.isSupported()) {
+                                const hls = new Hls({ startLevel: -1 });
+                                hls.attachMedia(mediaEl);
+                                hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+                                    hls.loadSource(url);
+                                });
+                                hls.on(Hls.Events.ERROR, (event, data) => {
+                                    if (data.fatal) {
+                                        hls.destroy();
+                                        mediaEl.src = url.replace('master.m3u8', 'stream.mp4');
+                                    }
+                                });
+                                mediaEl.hlsInstance = hls;
+                            } else if (mediaEl.canPlayType('application/vnd.apple.mpegurl')) {
+                                mediaEl.src = url;
+                            } else {
+                                mediaEl.src = url.replace('master.m3u8', 'stream.mp4');
+                            }
                         } else {
-                            mediaEl.src = url.replace('master.m3u8', 'stream.mp4');
+                            mediaEl.src = url;
                         }
-                    } else {
-                        mediaEl.src = url;
                     }
-                } });
-                
+                });
+
                 let vidResolve;
                 loadPromises.push(new Promise(r => vidResolve = r));
 
-                mediaEl.onloadedmetadata = function() {
+                mediaEl.onloadedmetadata = function () {
                     if (!this.dataset.origNw) {
                         this.dataset.origNw = this.videoWidth;
                         this.dataset.origNh = this.videoHeight;
@@ -4596,290 +4662,12 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                 img.decoding = 'async';
                 img.style.opacity = '0';
                 img.style.transition = 'opacity 0.2s ease-out';
-                
+
                 let imgResolve;
                 loadPromises.push(new Promise(r => imgResolve = r));
 
-                    networkTasks.push({ idx, isPlaceholder: false, execute: async () => {
-                        let isAnim = await checkAnimated(files[idx]);
-                        let checkRatio = originalTargetRatio;
-                        if (actualMode === 'ADPTV_SHOGA' && files[idx] && files[idx].nw) {
-                            let displayW = window.innerWidth * currentZoom;
-                            if (getCurrentLayoutMode() === 'SPREAD' && getSpreadGroup(idx).length === 2) displayW *= 0.5;
-                            let dRatio = displayW / files[idx].nw;
-                        checkRatio = Math.ceil(dRatio * 10) / 10;
-                        if (checkRatio < 0.1) checkRatio = 0.1;
-                        const maxArea = getDynamicMaxArea();
-                        while ((files[idx].nw * checkRatio * files[idx].nh * checkRatio > maxArea || files[idx].nw * checkRatio > 16384 || files[idx].nh * checkRatio > 16384) && checkRatio > 1.0) {
-                            checkRatio = Math.max(1.0, checkRatio - 0.1);
-                        }
-                        checkRatio = Math.round(checkRatio * 10) / 10;
-                    } else if (originalTargetRatio === 4.0 && files[idx] && files[idx].nw) {
-                        if (files[idx].nw * 4.0 > 16384 || files[idx].nh * 4.0 > 16384) {
-                            checkRatio = 2.0;
-                        }
-                    }
-
-                    let cacheKey = url + '_' + actualMode + '_' + checkRatio;
-                    let cachedUrl = upscaleCache.get(cacheKey);
-                    let bestCachedRatio = -1;
-
-                    for (let[key, cacheVal] of upscaleCache.entries()) {
-                        if (key.startsWith(url + '_' + actualMode + '_')) {
-                            let cachedRatio = parseFloat(key.split('_').pop());
-                            if (!isNaN(cachedRatio) && cachedRatio >= checkRatio) {
-                                if (cacheVal !== 'error' && cacheVal !== 'skipped' && cacheVal !== 'processing') {
-                                    if (bestCachedRatio === -1 || cachedRatio < bestCachedRatio) {
-                                        cacheKey = key;
-                                        bestCachedRatio = cachedRatio;
-                                        cachedUrl = cacheVal;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    img.onload = async function () {
-                        try { await this.decode(); } catch (e) { }
-                        this.style.opacity = '1';
-                        if (this._placeholder) {
-                            this._placeholder.style.opacity = '0';
-                            setTimeout(() => { if (this._placeholder && this._placeholder.parentNode) this._placeholder.parentNode.removeChild(this._placeholder); }, 300);
-                            delete this._placeholder;
-                        }
-                        clearTimeout(upscaleDebounceTimer);
-                        upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 300);
-                        imgResolve();
-                    };
-                    img.onerror = function() { 
-                        if (this._placeholder) {
-                            if (this._placeholder.parentNode) this._placeholder.parentNode.removeChild(this._placeholder);
-                            delete this._placeholder;
-                        }
-                        if (this.src && this.src !== this.dataset.originalUrl) {
-                            const failedTier = this.dataset.upscaleAppliedTier || this.dataset.upscaleProcessingKey;
-                            if (failedTier && upscaleCache.has(failedTier)) {
-                                upscaleCache.delete(failedTier);
-                            }
-                            this.src = this.dataset.originalUrl;
-                            delete this.dataset.upscaleAppliedTier;
-                            delete this.dataset.upscaleProcessingKey;
-                            delete this.dataset.pendingSwapUrl;
-                            if (upscaleMode !== 'OFF') {
-                                this.dataset.upscaleAppliedTier = 'NATIVE_BILINEAR';
-                                clearTimeout(upscaleDebounceTimer);
-                                upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 100);
-                            }
-                        } else {
-                            const fIdx = parseInt(this.dataset.fileIndex, 10);
-                            if (!isNaN(fIdx) && files[fIdx]) {
-                                files[fIdx].retryCount = (files[fIdx].retryCount || 0) + 1;
-                                if (files[fIdx].retryCount > 3) {
-                                    files[fIdx].isBroken = true;
-                                    const errDiv = document.createElement('div');
-                                    errDiv.className = 'broken-file-ui' + (this.className ? ' ' + this.className : '');
-                                    errDiv.style.display = 'flex';
-                                    errDiv.style.flexDirection = 'column';
-                                    errDiv.style.alignItems = 'center';
-                                    errDiv.style.justifyContent = 'center';
-                                    errDiv.style.width = '100%';
-                                    errDiv.style.height = '100%';
-                                    errDiv.style.color = '#ef4444';
-                                    errDiv.style.backgroundColor = 'rgba(255,255,255,0.05)';
-                                    errDiv.innerHTML = `<svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg><div style="margin-top:10px; font-size:0.8rem; font-weight:600; letter-spacing:1px;">MEDIA CORRUPTED</div>`;
-                                    if (this.parentNode) {
-                                        this.parentNode.replaceChild(errDiv, this);
-                                    }
-                                } else {
-                                    const oldUrl = this.dataset.originalUrl;
-                                    if (oldUrl && oldUrl.startsWith('blob:')) URL.revokeObjectURL(oldUrl);
-                                    urlCache.delete(fIdx);
-                                    
-                                    for (let[k, v] of upscaleCache.entries()) {
-                                        if (k.startsWith(oldUrl + '_')) {
-                                            if (v !== 'processing' && v !== 'error' && v !== 'skipped' && v.startsWith('blob:')) {
-                                                URL.revokeObjectURL(v);
-                                            }
-                                            upscaleCache.delete(k);
-                                        }
-                                    }
-                                    
-                                    let newUrl;
-                                    if (files[fIdx].isJellyfin) {
-                                        newUrl = getFileUrl(fIdx);
-                                    } else {
-                                        newUrl = URL.createObjectURL(files[fIdx]);
-                                        urlCache.set(fIdx, newUrl);
-                                    }
-                                    this.dataset.originalUrl = newUrl;
-                                    this.src = newUrl;
-                                }
-                            }
-                        }
-                        imgResolve(); 
-                    };
-
-                    if (!isAnim && upscaleMode !== 'OFF' && cachedUrl && cachedUrl !== 'error' && cachedUrl !== 'processing' && cachedUrl !== 'skipped') {
-                        img.src = cachedUrl;
-                        img.dataset.upscaleAppliedTier = cacheKey;
-                    } else {
-                        img.src = url;
-                        if (upscaleMode !== 'OFF') img.dataset.upscaleAppliedTier = 'NATIVE_BILINEAR';
-                    }
-                } });
-                slot.appendChild(img);
-            }
-        });
-
-        networkTasks.sort((a, b) => a.idx - b.idx);
-        networkTasks.filter(t => t.isPlaceholder).forEach(t => t.execute());
-        networkTasks.filter(t => !t.isPlaceholder).forEach(t => t.execute());
-
-    } else {
-        slot.querySelectorAll('.crossfade-clone, .shoga-placeholder').forEach(el => el.remove());
-        const networkTasks =[];
-        indices.forEach((idx, i) => {
-            if (files[idx] && files[idx].isBroken) return; 
-
-            const url = getFileUrl(idx);
-            const mediaEl = currentItems[i];
-            if (mediaEl.dataset.originalUrl !== url || (mediaEl.tagName.toLowerCase() === 'video' && !mediaEl.hasAttribute('src'))) {
-                if (mode === 'SPREAD' && indices.length === 2) {
-                    mediaEl.className = i === 0 ? 'spread-left' : 'spread-right';
-                } else {
-                    mediaEl.className = '';
-                }
-
-                mediaEl.dataset.fileIndex = idx;
-                mediaEl.dataset.originalUrl = url;
-                mediaEl.classList.add('shoga-main-media');
-
-                if (mediaEl._placeholder && mediaEl._placeholder.parentNode) {
-                    mediaEl._placeholder.parentNode.removeChild(mediaEl._placeholder);
-                    delete mediaEl._placeholder;
-                }
-                
-                const isVideo = files[idx] && (files[idx].type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(files[idx].name));
-                
-                let placeholder = null;
-                let placeholderSrc = null;
-                const gridCanvas = document.querySelector(`.grid-item[data-index="${idx}"] canvas.loaded`);
-                if (gridCanvas) {
-                    placeholderSrc = gridCanvas.toDataURL('image/jpeg', 0.5);
-                } else if (files[idx] && files[idx].isJellyfin) {
-                    placeholderSrc = `${files[idx].serverUrl}/Items/${files[idx].id}/Images/Primary?fillWidth=400&api_key=${files[idx].accessToken}`;
-                }
-
-                if (placeholderSrc) {
-                    placeholder = document.createElement('img');
-                    networkTasks.push({ idx, isPlaceholder: true, execute: () => { placeholder.src = placeholderSrc; } });
-                    
-                    placeholder.className = mediaEl.className;
-                    placeholder.classList.remove('shoga-main-media');
-                    placeholder.classList.add('shoga-placeholder');
-
-                    let customCss = 'position:absolute; z-index:-1; filter:blur(10px); opacity:0.5; transition:opacity 0.3s; pointer-events:none; ';
-                    
-                    if (mode === 'SPREAD' && indices.length === 2) {
-                        if (fitMode === 'WIDTH') {
-                            customCss += i === 0 
-                                ? 'width:50%; height:auto; left:0; top:auto; bottom:auto; object-fit:contain; object-position:right center;' 
-                                : 'width:50%; height:auto; right:0; top:auto; bottom:auto; object-fit:contain; object-position:left center;';
-                        } else {
-                            customCss += i === 0 
-                                ? 'width:50%; height:100%; left:0; top:0; object-fit:contain; object-position:right center;' 
-                                : 'width:50%; height:100%; right:0; top:0; object-fit:contain; object-position:left center;';
-                        }
-                    } else {
-                        if (fitMode === 'WIDTH') {
-                            customCss += 'width:100%; height:auto; left:0; right:0; margin:auto; top:auto; bottom:auto; object-fit:contain; object-position:center;';
-                        } else if (fitMode === 'HEIGHT') {
-                            customCss += 'width:auto; height:100%; left:0; right:0; margin:auto; top:0; bottom:0; object-fit:contain; object-position:center;';
-                        } else if (fitMode === 'ORIGINAL') {
-                            customCss += 'width:auto; height:auto; left:0; right:0; margin:auto; top:auto; bottom:auto; object-fit:contain; object-position:center;';
-                        } else {
-                            customCss += 'width:100%; height:100%; left:0; top:0; object-fit:contain; object-position:center;';
-                        }
-                    }
-                    
-                    placeholder.style.cssText = customCss;
-                    slot.style.position = 'relative';
-                    slot.appendChild(placeholder);
-                    mediaEl._placeholder = placeholder;
-                }
-
-                if (isVideo) {
-                    let vidResolve;
-                    loadPromises.push(new Promise(r => vidResolve = r));
-
-                    mediaEl.addEventListener('loadeddata', function() {
-                        if (this._placeholder) {
-                            this._placeholder.style.opacity = '0';
-                            setTimeout(() => { if (this._placeholder && this._placeholder.parentNode) this._placeholder.parentNode.removeChild(this._placeholder); }, 300);
-                            delete this._placeholder;
-                        }
-                    }, { once: true });
-
-                    networkTasks.push({ idx, isPlaceholder: false, execute: () => {
-                        if (url.includes('.m3u8')) {
-                            if (window.Hls && Hls.isSupported()) {
-                                if (mediaEl.hlsInstance) {
-                                    mediaEl.hlsInstance.destroy();
-                                    delete mediaEl.hlsInstance;
-                                }
-                                mediaEl.removeAttribute('src');
-                                mediaEl.load();
-
-                                const hls = new Hls({ startLevel: -1 });
-                                hls.attachMedia(mediaEl);
-                                hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-                                    hls.loadSource(url);
-                                });
-                                hls.on(Hls.Events.ERROR, (event, data) => {
-                                    if (data.fatal) {
-                                        hls.destroy();
-                                        mediaEl.src = url.replace('master.m3u8', 'stream.mp4');
-                                    }
-                                });
-                                mediaEl.hlsInstance = hls;
-                            } else if (mediaEl.canPlayType('application/vnd.apple.mpegurl')) {
-                                mediaEl.src = url;
-                            } else {
-                                mediaEl.src = url.replace('master.m3u8', 'stream.mp4');
-                            }
-                        } else {
-                            if (mediaEl.hlsInstance) {
-                                mediaEl.hlsInstance.destroy();
-                                delete mediaEl.hlsInstance;
-                            }
-                            mediaEl.removeAttribute('src');
-                            mediaEl.load();
-                            mediaEl.src = url;
-                        }
-                    } });
-                    delete mediaEl.dataset.origNw;
-                    delete mediaEl.dataset.origNh;
-
-                    mediaEl.onloadedmetadata = function() { vidResolve(); };
-                    mediaEl.onerror = function () { 
-                        if (this._placeholder) {
-                            if (this._placeholder.parentNode) this._placeholder.parentNode.removeChild(this._placeholder);
-                            delete this._placeholder;
-                        }
-                        vidResolve(); 
-                    };
-                    setTimeout(vidResolve, 1500);
-
-                } else {
-                    const img = mediaEl;
-                    img.decoding = 'async';
-                    img.style.opacity = '0';
-                    img.style.transition = 'opacity 0.2s ease-out';
-                    
-                    let imgResolve;
-                    loadPromises.push(new Promise(r => imgResolve = r));
-
-                    networkTasks.push({ idx, isPlaceholder: false, execute: async () => {
+                networkTasks.push({
+                    idx, isPlaceholder: false, execute: async () => {
                         let isAnim = await checkAnimated(files[idx]);
                         let checkRatio = originalTargetRatio;
                         if (actualMode === 'ADPTV_SHOGA' && files[idx] && files[idx].nw) {
@@ -4903,7 +4691,7 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                         let cachedUrl = upscaleCache.get(cacheKey);
                         let bestCachedRatio = -1;
 
-                        for (let[key, cacheVal] of upscaleCache.entries()) {
+                        for (let [key, cacheVal] of upscaleCache.entries()) {
                             if (key.startsWith(url + '_' + actualMode + '_')) {
                                 let cachedRatio = parseFloat(key.split('_').pop());
                                 if (!isNaN(cachedRatio) && cachedRatio >= checkRatio) {
@@ -4919,18 +4707,29 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                         }
 
                         img.onload = async function () {
+                            const currentSrc = this.src;
                             try { await this.decode(); } catch (e) { }
+                            if (this.src !== currentSrc) {
+                                imgResolve();
+                                return;
+                            }
                             this.style.opacity = '1';
                             if (this._placeholder) {
-                                this._placeholder.style.opacity = '0';
-                                setTimeout(() => { if (this._placeholder && this._placeholder.parentNode) this._placeholder.parentNode.removeChild(this._placeholder); }, 300);
+                                const ph = this._placeholder;
                                 delete this._placeholder;
+                                setTimeout(() => {
+                                    if (ph && ph.parentNode) {
+                                        ph.style.opacity = '0';
+                                        setTimeout(() => { if (ph && ph.parentNode) ph.parentNode.removeChild(ph); }, 300);
+                                    }
+                                }, 250);
                             }
                             clearTimeout(upscaleDebounceTimer);
                             upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 300);
                             imgResolve();
                         };
-                        img.onerror = function() { 
+
+                        img.onerror = function () {
                             if (this._placeholder) {
                                 if (this._placeholder.parentNode) this._placeholder.parentNode.removeChild(this._placeholder);
                                 delete this._placeholder;
@@ -4973,8 +4772,8 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                                         const oldUrl = this.dataset.originalUrl;
                                         if (oldUrl && oldUrl.startsWith('blob:')) URL.revokeObjectURL(oldUrl);
                                         urlCache.delete(fIdx);
-                                        
-                                        for (let[k, v] of upscaleCache.entries()) {
+
+                                        for (let [k, v] of upscaleCache.entries()) {
                                             if (k.startsWith(oldUrl + '_')) {
                                                 if (v !== 'processing' && v !== 'error' && v !== 'skipped' && v.startsWith('blob:')) {
                                                     URL.revokeObjectURL(v);
@@ -4982,7 +4781,7 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                                                 upscaleCache.delete(k);
                                             }
                                         }
-                                        
+
                                         let newUrl;
                                         if (files[fIdx].isJellyfin) {
                                             newUrl = getFileUrl(fIdx);
@@ -4995,7 +4794,7 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                                     }
                                 }
                             }
-                            imgResolve(); 
+                            imgResolve();
                         };
 
                         if (!isAnim && upscaleMode !== 'OFF' && cachedUrl && cachedUrl !== 'error' && cachedUrl !== 'processing' && cachedUrl !== 'skipped') {
@@ -5003,23 +4802,329 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                             img.dataset.upscaleAppliedTier = cacheKey;
                         } else {
                             img.src = url;
-                            if (upscaleMode !== 'OFF') {
-                                img.dataset.upscaleAppliedTier = 'NATIVE_BILINEAR';
+                            if (upscaleMode !== 'OFF') img.dataset.upscaleAppliedTier = 'NATIVE_BILINEAR';
+                        }
+                    }
+                });
+                slot.appendChild(img);
+            }
+        });
+
+        networkTasks.sort((a, b) => a.idx - b.idx);
+        networkTasks.filter(t => t.isPlaceholder).forEach(t => t.execute());
+        networkTasks.filter(t => !t.isPlaceholder).forEach(t => t.execute());
+
+    } else {
+        const networkTasks = [];
+        indices.forEach((idx, i) => {
+            if (files[idx] && files[idx].isBroken) return;
+
+            const url = getFileUrl(idx);
+            const mediaEl = currentItems[i];
+            if (mediaEl.dataset.originalUrl !== url || (mediaEl.tagName.toLowerCase() === 'video' && !mediaEl.hasAttribute('src'))) {
+
+                const expectedClass = (mode === 'SPREAD' && indices.length === 2) ? (i === 0 ? 'spread-left' : 'spread-right') : '';
+
+                Array.from(slot.children).forEach(child => {
+                    if (child.classList.contains('crossfade-clone') || child.classList.contains('shoga-placeholder')) {
+                        if (expectedClass === '' || child.classList.contains(expectedClass)) {
+                            child.remove();
+                        }
+                    }
+                });
+
+                mediaEl.className = expectedClass;
+
+                mediaEl.dataset.fileIndex = idx;
+                mediaEl.dataset.originalUrl = url;
+                mediaEl.classList.add('shoga-main-media');
+
+                if (mediaEl._placeholder && mediaEl._placeholder.parentNode) {
+                    mediaEl._placeholder.parentNode.removeChild(mediaEl._placeholder);
+                    delete mediaEl._placeholder;
+                }
+
+                const isVideo = files[idx] && (files[idx].type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(files[idx].name));
+
+                let placeholder = null;
+                let placeholderSrc = null;
+                const gridCanvas = document.querySelector(`.grid-item[data-index="${idx}"] canvas.loaded`);
+                if (gridCanvas) {
+                    placeholderSrc = gridCanvas.toDataURL('image/jpeg', 0.5);
+                } else if (files[idx] && files[idx].isJellyfin) {
+                    placeholderSrc = `${files[idx].serverUrl}/Items/${files[idx].id}/Images/Primary?fillWidth=400&api_key=${files[idx].accessToken}`;
+                }
+
+                if (placeholderSrc) {
+                    placeholder = document.createElement('img');
+                    networkTasks.push({ idx, isPlaceholder: true, execute: () => { placeholder.src = placeholderSrc; } });
+
+                    placeholder.className = mediaEl.className;
+                    placeholder.classList.remove('shoga-main-media');
+                    placeholder.classList.add('shoga-placeholder');
+
+                    let customCss = 'position:absolute; z-index:-1; filter:blur(10px); opacity:0.5; transition:opacity 0.3s; pointer-events:none; ';
+
+                    if (mode === 'SPREAD' && indices.length === 2) {
+                        if (fitMode === 'WIDTH') {
+                            customCss += i === 0
+                                ? 'width:50%; height:auto; left:0; top:auto; bottom:auto; object-fit:contain; object-position:right center;'
+                                : 'width:50%; height:auto; right:0; top:auto; bottom:auto; object-fit:contain; object-position:left center;';
+                        } else {
+                            customCss += i === 0
+                                ? 'width:50%; height:100%; left:0; top:0; object-fit:contain; object-position:right center;'
+                                : 'width:50%; height:100%; right:0; top:0; object-fit:contain; object-position:left center;';
+                        }
+                    } else {
+                        if (fitMode === 'WIDTH') {
+                            customCss += 'width:100%; height:auto; left:0; right:0; margin:auto; top:auto; bottom:auto; object-fit:contain; object-position:center;';
+                        } else if (fitMode === 'HEIGHT') {
+                            customCss += 'width:auto; height:100%; left:0; right:0; margin:auto; top:0; bottom:0; object-fit:contain; object-position:center;';
+                        } else if (fitMode === 'ORIGINAL') {
+                            customCss += 'width:auto; height:auto; left:0; right:0; margin:auto; top:auto; bottom:auto; object-fit:contain; object-position:center;';
+                        } else {
+                            customCss += 'width:100%; height:100%; left:0; top:0; object-fit:contain; object-position:center;';
+                        }
+                    }
+
+                    placeholder.style.cssText = customCss;
+                    slot.style.position = 'relative';
+                    slot.appendChild(placeholder);
+                    mediaEl._placeholder = placeholder;
+                }
+
+                if (isVideo) {
+                    let vidResolve;
+                    loadPromises.push(new Promise(r => vidResolve = r));
+
+                    mediaEl.addEventListener('loadeddata', function () {
+                        if (this._placeholder) {
+                            const ph = this._placeholder;
+                            delete this._placeholder;
+                            setTimeout(() => {
+                                if (ph && ph.parentNode) {
+                                    ph.style.opacity = '0';
+                                    setTimeout(() => { if (ph && ph.parentNode) ph.parentNode.removeChild(ph); }, 300);
+                                }
+                            }, 250);
+                        }
+                    }, { once: true });
+
+                    networkTasks.push({
+                        idx, isPlaceholder: false, execute: () => {
+                            if (url.includes('.m3u8')) {
+                                if (window.Hls && Hls.isSupported()) {
+                                    if (mediaEl.hlsInstance) {
+                                        mediaEl.hlsInstance.destroy();
+                                        delete mediaEl.hlsInstance;
+                                    }
+                                    mediaEl.removeAttribute('src');
+                                    mediaEl.load();
+
+                                    const hls = new Hls({ startLevel: -1 });
+                                    hls.attachMedia(mediaEl);
+                                    hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+                                        hls.loadSource(url);
+                                    });
+                                    hls.on(Hls.Events.ERROR, (event, data) => {
+                                        if (data.fatal) {
+                                            hls.destroy();
+                                            mediaEl.src = url.replace('master.m3u8', 'stream.mp4');
+                                        }
+                                    });
+                                    mediaEl.hlsInstance = hls;
+                                } else if (mediaEl.canPlayType('application/vnd.apple.mpegurl')) {
+                                    mediaEl.src = url;
+                                } else {
+                                    mediaEl.src = url.replace('master.m3u8', 'stream.mp4');
+                                }
                             } else {
-                                delete img.dataset.upscaleAppliedTier;
+                                if (mediaEl.hlsInstance) {
+                                    mediaEl.hlsInstance.destroy();
+                                    delete mediaEl.hlsInstance;
+                                }
+                                mediaEl.removeAttribute('src');
+                                mediaEl.load();
+                                mediaEl.src = url;
                             }
                         }
-                        
-                        delete img.dataset.origNw;
-                        delete img.dataset.origNh;
-                        delete img.dataset.upscaleProcessingKey;
-                        delete img.dataset.pendingSwapUrl;
-                        delete img.pendingUpscaleSwap;
-                    } });
+                    });
+                    delete mediaEl.dataset.origNw;
+                    delete mediaEl.dataset.origNh;
+
+                    mediaEl.onloadedmetadata = function () { vidResolve(); };
+                    mediaEl.onerror = function () {
+                        if (this._placeholder) {
+                            if (this._placeholder.parentNode) this._placeholder.parentNode.removeChild(this._placeholder);
+                            delete this._placeholder;
+                        }
+                        vidResolve();
+                    };
+                    setTimeout(vidResolve, 1500);
+
+                } else {
+                    const img = mediaEl;
+                    img.decoding = 'async';
+                    img.style.opacity = '0';
+                    img.style.transition = 'opacity 0.2s ease-out';
+
+                    let imgResolve;
+                    loadPromises.push(new Promise(r => imgResolve = r));
+
+                    networkTasks.push({
+                        idx, isPlaceholder: false, execute: async () => {
+                            let isAnim = await checkAnimated(files[idx]);
+                            let checkRatio = originalTargetRatio;
+                            if (actualMode === 'ADPTV_SHOGA' && files[idx] && files[idx].nw) {
+                                let displayW = window.innerWidth * currentZoom;
+                                if (getCurrentLayoutMode() === 'SPREAD' && getSpreadGroup(idx).length === 2) displayW *= 0.5;
+                                let dRatio = displayW / files[idx].nw;
+                                checkRatio = Math.ceil(dRatio * 10) / 10;
+                                if (checkRatio < 0.1) checkRatio = 0.1;
+                                const maxArea = getDynamicMaxArea();
+                                while ((files[idx].nw * checkRatio * files[idx].nh * checkRatio > maxArea || files[idx].nw * checkRatio > 16384 || files[idx].nh * checkRatio > 16384) && checkRatio > 1.0) {
+                                    checkRatio = Math.max(1.0, checkRatio - 0.1);
+                                }
+                                checkRatio = Math.round(checkRatio * 10) / 10;
+                            } else if (originalTargetRatio === 4.0 && files[idx] && files[idx].nw) {
+                                if (files[idx].nw * 4.0 > 16384 || files[idx].nh * 4.0 > 16384) {
+                                    checkRatio = 2.0;
+                                }
+                            }
+
+                            let cacheKey = url + '_' + actualMode + '_' + checkRatio;
+                            let cachedUrl = upscaleCache.get(cacheKey);
+                            let bestCachedRatio = -1;
+
+                            for (let [key, cacheVal] of upscaleCache.entries()) {
+                                if (key.startsWith(url + '_' + actualMode + '_')) {
+                                    let cachedRatio = parseFloat(key.split('_').pop());
+                                    if (!isNaN(cachedRatio) && cachedRatio >= checkRatio) {
+                                        if (cacheVal !== 'error' && cacheVal !== 'skipped' && cacheVal !== 'processing') {
+                                            if (bestCachedRatio === -1 || cachedRatio < bestCachedRatio) {
+                                                cacheKey = key;
+                                                bestCachedRatio = cachedRatio;
+                                                cachedUrl = cacheVal;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            img.onload = async function () {
+                                const currentSrc = this.src;
+                                try { await this.decode(); } catch (e) { }
+                                if (this.src !== currentSrc) {
+                                    imgResolve();
+                                    return;
+                                }
+                                this.style.opacity = '1';
+                                if (this._placeholder) {
+                                    const ph = this._placeholder;
+                                    delete this._placeholder;
+                                    setTimeout(() => {
+                                        if (ph && ph.parentNode) {
+                                            ph.style.opacity = '0';
+                                            setTimeout(() => { if (ph && ph.parentNode) ph.parentNode.removeChild(ph); }, 300);
+                                        }
+                                    }, 250);
+                                }
+                                clearTimeout(upscaleDebounceTimer);
+                                upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 300);
+                                imgResolve();
+                            };
+
+                            img.onerror = function () {
+                                if (this._placeholder) {
+                                    if (this._placeholder.parentNode) this._placeholder.parentNode.removeChild(this._placeholder);
+                                    delete this._placeholder;
+                                }
+                                if (this.src && this.src !== this.dataset.originalUrl) {
+                                    const failedTier = this.dataset.upscaleAppliedTier || this.dataset.upscaleProcessingKey;
+                                    if (failedTier && upscaleCache.has(failedTier)) {
+                                        upscaleCache.delete(failedTier);
+                                    }
+                                    this.src = this.dataset.originalUrl;
+                                    delete this.dataset.upscaleAppliedTier;
+                                    delete this.dataset.upscaleProcessingKey;
+                                    delete this.dataset.pendingSwapUrl;
+                                    if (upscaleMode !== 'OFF') {
+                                        this.dataset.upscaleAppliedTier = 'NATIVE_BILINEAR';
+                                        clearTimeout(upscaleDebounceTimer);
+                                        upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 100);
+                                    }
+                                } else {
+                                    const fIdx = parseInt(this.dataset.fileIndex, 10);
+                                    if (!isNaN(fIdx) && files[fIdx]) {
+                                        files[fIdx].retryCount = (files[fIdx].retryCount || 0) + 1;
+                                        if (files[fIdx].retryCount > 3) {
+                                            files[fIdx].isBroken = true;
+                                            const errDiv = document.createElement('div');
+                                            errDiv.className = 'broken-file-ui' + (this.className ? ' ' + this.className : '');
+                                            errDiv.style.display = 'flex';
+                                            errDiv.style.flexDirection = 'column';
+                                            errDiv.style.alignItems = 'center';
+                                            errDiv.style.justifyContent = 'center';
+                                            errDiv.style.width = '100%';
+                                            errDiv.style.height = '100%';
+                                            errDiv.style.color = '#ef4444';
+                                            errDiv.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                                            errDiv.innerHTML = `<svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg><div style="margin-top:10px; font-size:0.8rem; font-weight:600; letter-spacing:1px;">MEDIA CORRUPTED</div>`;
+                                            if (this.parentNode) {
+                                                this.parentNode.replaceChild(errDiv, this);
+                                            }
+                                        } else {
+                                            const oldUrl = this.dataset.originalUrl;
+                                            if (oldUrl && oldUrl.startsWith('blob:')) URL.revokeObjectURL(oldUrl);
+                                            urlCache.delete(fIdx);
+
+                                            for (let [k, v] of upscaleCache.entries()) {
+                                                if (k.startsWith(oldUrl + '_')) {
+                                                    if (v !== 'processing' && v !== 'error' && v !== 'skipped' && v.startsWith('blob:')) {
+                                                        URL.revokeObjectURL(v);
+                                                    }
+                                                    upscaleCache.delete(k);
+                                                }
+                                            }
+
+                                            let newUrl;
+                                            if (files[fIdx].isJellyfin) {
+                                                newUrl = getFileUrl(fIdx);
+                                            } else {
+                                                newUrl = URL.createObjectURL(files[fIdx]);
+                                                urlCache.set(fIdx, newUrl);
+                                            }
+                                            this.dataset.originalUrl = newUrl;
+                                            this.src = newUrl;
+                                        }
+                                    }
+                                }
+                                imgResolve();
+                            };
+
+                            if (!isAnim && upscaleMode !== 'OFF' && cachedUrl && cachedUrl !== 'error' && cachedUrl !== 'processing' && cachedUrl !== 'skipped') {
+                                img.src = cachedUrl;
+                                img.dataset.upscaleAppliedTier = cacheKey;
+                            } else {
+                                img.src = url;
+                                if (upscaleMode !== 'OFF') {
+                                    img.dataset.upscaleAppliedTier = 'NATIVE_BILINEAR';
+                                } else {
+                                    delete img.dataset.upscaleAppliedTier;
+                                }
+                            }
+
+                            delete img.dataset.origNw;
+                            delete img.dataset.origNh;
+                            delete img.dataset.upscaleProcessingKey;
+                            delete img.dataset.pendingSwapUrl;
+                            delete img.pendingUpscaleSwap;
+                        }
+                    });
                 }
             }
         });
-        
+
         networkTasks.sort((a, b) => a.idx - b.idx);
         networkTasks.filter(t => t.isPlaceholder).forEach(t => t.execute());
         networkTasks.filter(t => !t.isPlaceholder).forEach(t => t.execute());
@@ -5041,12 +5146,12 @@ async function updateUpscaleUIState() {
     if (viewMode !== 'VIEWER' || files.length === 0) return;
     const currentFile = files[currentIndex];
     if (!currentFile) return;
-    
+
     const isAnim = await checkAnimated(currentFile) || currentFile.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(currentFile.name);
-    
+
     const advancedUpscaleButtons = document.querySelectorAll('#upscale-adptv, #upscale-anime4k, #upscale-xbrz, #upscale-fsr');
     const bilinearBtn = document.getElementById('upscale-bilinear');
-    
+
     if (isAnim) {
         advancedUpscaleButtons.forEach(btn => {
             btn.disabled = true;
@@ -5078,7 +5183,7 @@ function updateVideoPlayback() {
     if (viewMode !== 'VIEWER') return;
     dom.viewerSlider.querySelectorAll('video').forEach(v => {
         if (v.closest('#viewer-content')) {
-            v.play().catch(e => {});
+            v.play().catch(e => { });
         } else {
             v.pause();
         }
@@ -5088,19 +5193,19 @@ function updateVideoPlayback() {
 function renderViewer() {
 
     if (files.length === 0 || viewMode !== 'VIEWER') return;
-    
+
     updateIndices();
 
     let fitClass = `fit-${fitMode.toLowerCase()}`;
     let mode = getCurrentLayoutMode();
     let spreadClass = mode === 'SPREAD' ? 'view-spread ' : '';
-    
+
     dom.slots.prev.className = `view-slot ${spreadClass}${fitClass}`;
     dom.slots.curr.className = `view-slot ${spreadClass}${fitClass}`;
     dom.slots.next.className = `view-slot ${spreadClass}${fitClass}`;
 
     if (!dom.viewerContent.parentElement) dom.slots.curr.appendChild(dom.viewerContent);
-    
+
     currentRenderToken++;
     const token = currentRenderToken;
 
@@ -5123,7 +5228,7 @@ function renderViewer() {
 
     updateUpscaleUIState();
     updateVideoPlayback();
-    
+
     document.querySelectorAll('#mode-single, #mode-spread').forEach(b => b.classList.remove('active'));
     document.getElementById(mode === 'SINGLE' ? 'mode-single' : 'mode-spread').classList.add('active');
     if (mode === 'SPREAD') dom.coverSettingGroup.classList.add('visible');
@@ -5164,7 +5269,7 @@ function applyContentTransform() {
 function cleanCaches() {
     let revokedUrls = 0;
     const activeUrls = new Set();
-    for (const[idx, url] of urlCache.entries()) {
+    for (const [idx, url] of urlCache.entries()) {
         if (Math.abs(idx - currentIndex) > 16) {
             if (url.startsWith('blob:')) { URL.revokeObjectURL(url); revokedUrls++; }
             urlCache.delete(idx);
@@ -5172,7 +5277,7 @@ function cleanCaches() {
             activeUrls.add(url);
         }
     }
-    for (const[key, url] of upscaleCache.entries()) {
+    for (const [key, url] of upscaleCache.entries()) {
         const origUrl = key.split('_')[0];
         if (!activeUrls.has(origUrl)) {
             if (url === 'processing') continue;
@@ -5187,7 +5292,7 @@ function commitNavigation() {
     if (navTimeout) {
         clearTimeout(navTimeout);
         navTimeout = null;
-        
+
         let direction = null;
         if (pendingIndex !== null) {
             if (pendingIndex === nextIndex) direction = 'next';
@@ -5195,13 +5300,13 @@ function commitNavigation() {
             currentIndex = pendingIndex;
             pendingIndex = null;
         }
-        
+
         dom.body.classList.remove('animating');
-        
+
         if (direction) {
             const oldCurrImgs = Array.from(dom.viewerContent.childNodes).filter(n => !n.classList?.contains('crossfade-clone'));
             let oldSideImgs, targetSideSlot;
-            
+
             if (direction === 'next') {
                 oldSideImgs = readDir === 'LTR' ? Array.from(dom.slots.next.childNodes) : Array.from(dom.slots.prev.childNodes);
                 targetSideSlot = readDir === 'LTR' ? dom.slots.prev : dom.slots.next;
@@ -5209,13 +5314,13 @@ function commitNavigation() {
                 oldSideImgs = readDir === 'LTR' ? Array.from(dom.slots.prev.childNodes) : Array.from(dom.slots.next.childNodes);
                 targetSideSlot = readDir === 'LTR' ? dom.slots.next : dom.slots.prev;
             }
-            
+
             oldSideImgs = oldSideImgs.filter(n => !n.classList?.contains('crossfade-clone'));
 
             if (oldCurrImgs.length > 0) targetSideSlot.replaceChildren(...oldCurrImgs);
             if (oldSideImgs.length > 0) dom.viewerContent.replaceChildren(...oldSideImgs);
         }
-        
+
         dom.viewerSlider.style.transform = `translateX(0px)`;
         void dom.viewerSlider.offsetWidth;
         renderViewer();
@@ -5235,12 +5340,12 @@ function navigateLogical(logicalDir) {
     if (isSingleFileMode || targetIdx < 0 || targetIdx >= files.length) {
         const physicalDir = readDir === 'LTR' ? logicalDir : (logicalDir === 'next' ? 'prev' : 'next');
         const bounceX = physicalDir === 'next' ? -60 : 60;
-        
+
         requestAnimationFrame(() => {
             dom.body.classList.add('animating');
             dom.viewerSlider.style.transform = `translateX(${bounceX}px)`;
         });
-        
+
         navTimeout = setTimeout(() => {
             dom.viewerSlider.style.transform = `translateX(0px)`;
             setTimeout(() => {
@@ -5290,11 +5395,11 @@ window.addEventListener('popstate', (e) => {
 });
 
 window.addEventListener('blur', () => {
-    isPanning = false; isDragging = false; pointers =[]; initialDistance = 0;
+    isPanning = false; isDragging = false; pointers = []; initialDistance = 0;
 });
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-        isPanning = false; isDragging = false; pointers =[]; initialDistance = 0;
+        isPanning = false; isDragging = false; pointers = []; initialDistance = 0;
     }
 });
 
@@ -5304,7 +5409,7 @@ let wheelTimer = null;
 let isWheelLocked = false;
 
 const existingViewerWheel = dom.viewerArea.onwheel;
-if(existingViewerWheel) dom.viewerArea.removeEventListener('wheel', existingViewerWheel);
+if (existingViewerWheel) dom.viewerArea.removeEventListener('wheel', existingViewerWheel);
 
 dom.viewerArea.addEventListener('wheel', (e) => {
     if (viewMode !== 'VIEWER') return;
@@ -5353,17 +5458,17 @@ dom.viewerArea.addEventListener('wheel', (e) => {
         isWheelLocked = false;
     }, 150);
 
-    if (Math.abs(wheelAccX) > 120) {
+    if (Math.abs(wheelAccX) > 600) {
         isWheelLocked = true;
         const dir = wheelAccX > 0 ? 'next' : 'prev';
         navigateLogical(readDir === 'LTR' ? dir : (dir === 'next' ? 'prev' : 'next'));
         wheelAccX = 0; wheelAccY = 0;
-    } 
+    }
 }, { passive: false });
 
 dom.gridArea.addEventListener('wheel', (e) => {
     if (viewMode !== 'GRID' || e.ctrlKey) return;
-    
+
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
         if (isWheelLocked) {
             e.preventDefault();
@@ -5373,10 +5478,10 @@ dom.gridArea.addEventListener('wheel', (e) => {
         clearTimeout(wheelTimer);
         wheelTimer = setTimeout(() => { wheelAccX = 0; isWheelLocked = false; }, 150);
 
-        if (wheelAccX < -120 && dirStack.length > 1) {
+        if (wheelAccX < -600 && dirStack.length > 1) {
             isWheelLocked = true;
             e.preventDefault();
-            
+
             dirStack.pop();
             const parent = dirStack[dirStack.length - 1];
             folderFilterText = parent.folderFilterText || '';
@@ -5410,7 +5515,7 @@ window.addEventListener('wheel', (e) => {
                 clearTimeout(wheelTimer);
                 wheelTimer = setTimeout(() => { wheelAccX = 0; isWheelLocked = false; }, 150);
 
-                if (wheelAccX > 120) {
+                if (wheelAccX > 600) {
                     isWheelLocked = true;
                     closeAllPanels();
                     dom.bookmarksPanel.classList.add('active');
@@ -5428,7 +5533,7 @@ window.addEventListener('wheel', (e) => {
             clearTimeout(wheelTimer);
             wheelTimer = setTimeout(() => { wheelAccX = 0; isWheelLocked = false; }, 150);
 
-            if (wheelAccX < -120) {
+            if (wheelAccX < -600) {
                 isWheelLocked = true;
                 dom.bookmarksPanel.classList.remove('active');
                 wheelAccX = 0;
@@ -5441,14 +5546,14 @@ let vW = 0, vH = 0, cW = 0, cH = 0;
 
 dom.viewerArea.addEventListener('pointerdown', (e) => {
     if (viewMode !== 'VIEWER' || e.target.closest('#top-bar') || e.target.closest('.panel') || e.target.closest('#bookmarks-panel')) return;
-    
+
     if (e.clientX > window.innerWidth - 30) return;
 
     closeAllPanels();
     if (navTimeout) commitNavigation();
 
     const now = Date.now();
-    
+
     if (pointers.length === 0) {
         maxPointersDuringTap = 0;
         lastTap = now;
@@ -5462,13 +5567,13 @@ dom.viewerArea.addEventListener('pointerdown', (e) => {
         pointers.push(e);
     }
     maxPointersDuringTap = Math.max(maxPointersDuringTap, pointers.length);
-    
-    try { dom.viewerArea.setPointerCapture(e.pointerId); } catch(err) {}
+
+    try { dom.viewerArea.setPointerCapture(e.pointerId); } catch (err) { }
 
     if (pointers.length === 1) {
         startX = e.clientX; startY = e.clientY;
         initialPanX = panX; initialPanY = panY;
-        
+
         vW = window.innerWidth;
         vH = window.innerHeight;
         cW = 0; cH = 0;
@@ -5501,7 +5606,7 @@ function updateUiHideEngine(timestamp) {
     lastTickTime = timestamp;
 
     const noPanelsOpen = dom.settingsPanel.classList.contains('hidden') && dom.infoPanel.classList.contains('hidden') && !dom.bookmarksPanel.classList.contains('active') && !dom.jellyfinModal.classList.contains('active');
-    
+
     if (!noPanelsOpen || isDragging || isPanning) {
         uiHideRAF = requestAnimationFrame(updateUiHideEngine);
         return;
@@ -5551,7 +5656,7 @@ const uiObserver = new MutationObserver((mutations) => {
         if (mutation.attributeName === 'class') {
             const hadUiHidden = mutation.oldValue ? mutation.oldValue.includes('ui-hidden') : false;
             const hasUiHidden = dom.body.classList.contains('ui-hidden');
-            
+
             if (hadUiHidden === hasUiHidden) return;
 
             if (!hasUiHidden && viewMode === 'VIEWER') {
@@ -5579,7 +5684,7 @@ dom.viewerArea.addEventListener('pointermove', (e) => {
     if (viewMode === 'VIEWER') {
         lastPointerType = e.pointerType;
         const noPanelsOpen = dom.settingsPanel.classList.contains('hidden') && dom.infoPanel.classList.contains('hidden') && !dom.bookmarksPanel.classList.contains('active') && !dom.jellyfinModal.classList.contains('active');
-        
+
         if (e.pointerType === 'mouse') {
             lastKnownMouseY = e.clientY;
             let timeSinceDrag = Date.now() - lastDragEndTime;
@@ -5638,13 +5743,13 @@ dom.viewerArea.addEventListener('pointermove', (e) => {
         if (!isDragging && Math.hypot(dx, dy) > 10) {
             isDragging = true;
             dom.body.classList.add('ui-hidden');
-            
+
             const totalW = cW * currentZoom;
             const maxH = cH * currentZoom;
-            
+
             const overflowX = totalW > vW + 2;
             const overflowY = maxH > vH + 2;
-            
+
             if (currentZoom === 1 && !overflowX && !overflowY) {
                 axisLocked = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
             } else {
@@ -5659,25 +5764,25 @@ dom.viewerArea.addEventListener('pointermove', (e) => {
                 updateIndices();
                 let targetIdx = logicalDir === 'next' ? nextIndex : prevIndex;
                 let isBlocked = isSingleFileMode || targetIdx < 0 || targetIdx >= files.length;
-                
+
                 let applyDx = dx;
                 if (isBlocked) {
                     applyDx = dx * 0.2;
                 }
                 dom.viewerSlider.style.transform = `translateX(${applyDx}px)`;
             } else if (axisLocked === 'y') {
-                panY = dy * 0.2; 
+                panY = dy * 0.2;
                 applyContentTransform();
             } else {
                 const totalW = cW * currentZoom;
                 const maxH = cH * currentZoom;
-                
+
                 let maxPx = Math.max(0, (totalW - vW) / 2);
                 let maxPy = Math.max(0, (maxH - vH) / 2);
-                
+
                 let targetPanX = initialPanX + dx;
                 let targetPanY = initialPanY + dy;
-                
+
                 let overscrollX = 0;
                 if (targetPanX > maxPx) {
                     overscrollX = targetPanX - maxPx;
@@ -5686,17 +5791,17 @@ dom.viewerArea.addEventListener('pointermove', (e) => {
                     overscrollX = targetPanX - (-maxPx);
                     targetPanX = -maxPx + overscrollX * 0.3;
                 }
-                
+
                 if (targetPanY > maxPy) {
                     targetPanY = maxPy + (targetPanY - maxPy) * 0.3;
                 } else if (targetPanY < -maxPy) {
                     targetPanY = -maxPy + (targetPanY - (-maxPy)) * 0.3;
                 }
-                
+
                 panX = targetPanX;
                 panY = targetPanY;
                 applyContentTransform();
-                
+
                 if (Math.abs(overscrollX) > 0) {
                     dom.viewerSlider.style.transform = `translateX(${overscrollX * 0.5}px)`;
                 } else {
@@ -5708,7 +5813,7 @@ dom.viewerArea.addEventListener('pointermove', (e) => {
         if (maxPointersDuringTap >= 3) return;
         const dist = Math.hypot(pointers[0].clientX - pointers[1].clientX, pointers[0].clientY - pointers[1].clientY);
         const center = { x: (pointers[0].clientX + pointers[1].clientX) / 2, y: (pointers[0].clientY + pointers[1].clientY) / 2 };
-        
+
         if (initialDistance === 0) {
             initialDistance = dist; initialZoom = currentZoom;
             startX = center.x; startY = center.y;
@@ -5717,13 +5822,13 @@ dom.viewerArea.addEventListener('pointermove', (e) => {
             if (Math.abs(dist - initialDistance) < 5) return;
             const scale = dist / initialDistance;
             const newZoom = Math.max(0.1, Math.min(initialZoom * scale, maxZoomLimit));
-            
+
             const cx = center.x - vW / 2;
             const cy = center.y - vH / 2;
             panX = cx - (cx - initialPanX - (center.x - startX)) * (newZoom / initialZoom);
             panY = cy - (cy - initialPanY - (center.y - startY)) * (newZoom / initialZoom);
             currentZoom = newZoom;
-            
+
             applyContentTransform();
         }
     }
@@ -5731,12 +5836,12 @@ dom.viewerArea.addEventListener('pointermove', (e) => {
 
 function handlePointerEnd(e) {
     if (!isPanning) return;
-    
+
     try {
         if (dom.viewerArea.hasPointerCapture(e.pointerId)) {
             dom.viewerArea.releasePointerCapture(e.pointerId);
         }
-    } catch(err) {}
+    } catch (err) { }
 
     const idx = pointers.findIndex(p => p.pointerId === e.pointerId);
     if (idx !== -1) pointers.splice(idx, 1);
@@ -5764,8 +5869,8 @@ function handlePointerEnd(e) {
 
         if (isDragging) {
             const dx = e.clientX - startX;
-            const dy = e.clientY - startY; 
-            
+            const dy = e.clientY - startY;
+
             if (axisLocked === 'x') {
                 let physicalDir = dx > 0 ? 'prev' : 'next';
                 let logicalDir = readDir === 'LTR' ? physicalDir : (physicalDir === 'next' ? 'prev' : 'next');
@@ -5776,7 +5881,7 @@ function handlePointerEnd(e) {
                 const isVideo = files.length > 0 && isVideoFile(files[currentIndex]);
                 const swipeMultiplier = isVideo ? 1.5 : 1;
                 const threshold = vW * (e.pointerType === 'touch' ? 0.075 : 0.15) * swipeMultiplier;
-                
+
                 if (Math.abs(dx) > threshold && !isBlocked) {
                     navigateLogical(logicalDir);
                 } else resetTransform(true);
@@ -5789,19 +5894,19 @@ function handlePointerEnd(e) {
             } else {
                 const totalW = cW * currentZoom;
                 const maxH = cH * currentZoom;
-                
+
                 let maxPx = Math.max(0, (totalW - vW) / 2);
                 let maxPy = Math.max(0, (maxH - vH) / 2);
-                
+
                 let rawPanX = initialPanX + dx;
                 let overscrollX = 0;
                 if (rawPanX > maxPx) overscrollX = rawPanX - maxPx;
                 else if (rawPanX < -maxPx) overscrollX = rawPanX - (-maxPx);
-                
+
                 const isVideo = files.length > 0 && isVideoFile(files[currentIndex]);
                 const swipeMultiplier = isVideo ? 1.5 : 1;
                 const threshold = vW * (e.pointerType === 'touch' ? 0.075 : 0.15) * swipeMultiplier;
-                
+
                 if (Math.abs(overscrollX) > threshold) {
                     const physicalDir = overscrollX > 0 ? 'prev' : 'next';
                     const logicalDir = readDir === 'LTR' ? physicalDir : (physicalDir === 'next' ? 'prev' : 'next');
@@ -5840,16 +5945,17 @@ function handlePointerEnd(e) {
                         panX = 0;
                         panY = 0;
                         currentZoom = targetScale;
-                        
+
                         dom.body.classList.add('animating');
                         applyContentTransform();
 
                         setTimeout(() => {
                             dom.body.classList.remove('animating');
-                            
+
                             dom.viewerContent.querySelectorAll('.crossfade-clone').forEach(el => el.remove());
 
                             fitMode = 'AUTO';
+                            localStorage.setItem('shoga-fit-mode', 'AUTO');
                             document.querySelectorAll('#fit-auto, #fit-contain, #fit-width, #fit-height, #fit-original').forEach(b => b.classList.remove('active'));
                             document.getElementById('fit-auto').classList.add('active');
 
@@ -5862,7 +5968,7 @@ function handlePointerEnd(e) {
                             panX = 0;
                             panY = 0;
                             dom.viewerContent.style.transform = `translate(0px, 0px) scale(1)`;
-                            
+
                             clearTimeout(upscaleDebounceTimer);
                             upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 50);
                         }, 260);
@@ -5924,7 +6030,7 @@ function handlePointerEnd(e) {
     } else {
         startX = pointers[0].clientX; startY = pointers[0].clientY;
         initialPanX = panX; initialPanY = panY;
-        initialDistance = 0; 
+        initialDistance = 0;
     }
 }
 
@@ -5948,7 +6054,7 @@ window.addEventListener('keydown', async (e) => {
             }
             return;
         }
-        
+
         if (viewMode === 'VIEWER') {
             dom.bookmarksPanel.classList.add('active');
             renderBookmarks();
@@ -5959,7 +6065,7 @@ window.addEventListener('keydown', async (e) => {
             }
             return;
         }
-        
+
         if (viewMode === 'GRID') {
             if (currentFolders.length > 0 && files.length === 0) {
                 const input = document.getElementById('folder-filter-input');
@@ -5984,7 +6090,7 @@ window.addEventListener('keydown', async (e) => {
     if (viewMode === 'VIEWER') {
         if (e.key === 'ArrowRight') navigateLogical(readDir === 'LTR' ? 'next' : 'prev');
         if (e.key === 'ArrowLeft') navigateLogical(readDir === 'LTR' ? 'prev' : 'next');
-        
+
         if (e.key === 'Escape') switchToGrid();
 
         if (e.key === 'f' || e.key === 'F11') {
@@ -6021,10 +6127,13 @@ window.addEventListener('keydown', async (e) => {
 let edgeSwipeStartX = 0;
 let edgeSwipeStartY = 0;
 let isEdgeSwiping = false;
+let activeEdgeSwipe = false;
 
 window.addEventListener('pointerdown', (e) => {
+    if (dom.bookmarksPanel.classList.contains('active')) return;
     if (e.clientX > window.innerWidth - 30) {
         isEdgeSwiping = true;
+        activeEdgeSwipe = true;
         edgeSwipeStartX = e.clientX;
         edgeSwipeStartY = e.clientY;
     }
@@ -6034,7 +6143,7 @@ window.addEventListener('pointermove', (e) => {
     if (!isEdgeSwiping) return;
     const dx = edgeSwipeStartX - e.clientX;
     const dy = Math.abs(e.clientY - edgeSwipeStartY);
-    
+
     if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 5) {
         if (e.cancelable) e.preventDefault();
     }
@@ -6047,8 +6156,16 @@ window.addEventListener('pointermove', (e) => {
     }
 }, { passive: false });
 
-window.addEventListener('pointerup', () => { isEdgeSwiping = false; });
-window.addEventListener('pointercancel', () => { isEdgeSwiping = false; });
+window.addEventListener('pointerup', () => {
+    if (isEdgeSwiping || activeEdgeSwipe) lastPanelSwipeTime = Date.now();
+    isEdgeSwiping = false;
+    activeEdgeSwipe = false;
+});
+window.addEventListener('pointercancel', () => {
+    if (isEdgeSwiping || activeEdgeSwipe) lastPanelSwipeTime = Date.now();
+    isEdgeSwiping = false;
+    activeEdgeSwipe = false;
+});
 
 window.addEventListener('touchmove', (e) => {
     if (!isEdgeSwiping) return;
@@ -6072,7 +6189,7 @@ window.addEventListener('pointerdown', (e) => {
             bmSwipeStartX = e.clientX;
             bmSwipeStartY = e.clientY;
             dom.bookmarksPanel.style.transition = 'none';
-            try { e.target.setPointerCapture(e.pointerId); } catch(err) {}
+            try { e.target.setPointerCapture(e.pointerId); } catch (err) { }
         }
     }
 });
@@ -6081,7 +6198,7 @@ window.addEventListener('pointermove', (e) => {
     if (!isBmSwiping) return;
     const dx = e.clientX - bmSwipeStartX;
     const dy = Math.abs(e.clientY - bmSwipeStartY);
-    
+
     if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 5) {
         if (e.cancelable) e.preventDefault();
     }
@@ -6091,29 +6208,47 @@ window.addEventListener('pointermove', (e) => {
     }
 }, { passive: false });
 
+const btnMobileBack = document.getElementById('btn-mobile-back');
+if (btnMobileBack) {
+    btnMobileBack.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (viewMode === 'VIEWER') {
+            switchToGrid();
+        } else if (viewMode === 'GRID') {
+            if (dirStack.length > 1) {
+                const btnUp = document.querySelector('.btn-up');
+                if (btnUp) btnUp.click();
+            } else {
+                dom.btnHome.click();
+            }
+        }
+    });
+}
+
 const endBmSwipe = (e) => {
     if (!isBmSwiping) return;
     isBmSwiping = false;
-    try { if (e && e.target) e.target.releasePointerCapture(e.pointerId); } catch(err) {}
-    
+    lastPanelSwipeTime = Date.now();
+    try { if (e && e.target) e.target.releasePointerCapture(e.pointerId); } catch (err) { }
+
     if (e && e.clientX !== undefined) {
         const dx = e.clientX - bmSwipeStartX;
         dom.bookmarksPanel.style.transition = 'transform 0.3s ease-out';
         if (dx > 60) {
             dom.bookmarksPanel.classList.remove('active');
-            setTimeout(() => { 
-                dom.bookmarksPanel.style.transform = ''; 
-                dom.bookmarksPanel.style.transition = ''; 
+            setTimeout(() => {
+                dom.bookmarksPanel.style.transform = '';
+                dom.bookmarksPanel.style.transition = '';
             }, 300);
         } else {
             dom.bookmarksPanel.style.transform = 'translateX(0px)';
-            setTimeout(() => { 
-                dom.bookmarksPanel.style.transform = ''; 
-                dom.bookmarksPanel.style.transition = ''; 
+            setTimeout(() => {
+                dom.bookmarksPanel.style.transform = '';
+                dom.bookmarksPanel.style.transition = '';
             }, 300);
         }
     } else {
-        dom.bookmarksPanel.style.transform = ''; 
+        dom.bookmarksPanel.style.transform = '';
         dom.bookmarksPanel.style.transition = '';
     }
 };
@@ -6134,7 +6269,7 @@ window.addEventListener('touchmove', (e) => {
 if ('launchQueue' in window) {
     launchQueue.setConsumer(async (launchParams) => {
         if (!launchParams.files.length) return;
-        
+
         const filePromises = launchParams.files.map(handle => handle.getFile());
         const openedFiles = await Promise.all(filePromises);
         const validImages = openedFiles.filter(f => f.type.startsWith('image/') || f.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi|jpg|jpeg|png|gif|webp|avif|bmp|ico)$/i.test(f.name));
@@ -6152,21 +6287,21 @@ if ('launchQueue' in window) {
                         const path = await item.handle.resolve(handle);
                         if (path !== null) {
                             if (await verifyPermission(item.handle)) {
-                                dirStack =[{ handle: item.handle, name: item.name }];
+                                dirStack = [{ handle: item.handle, name: item.name }];
                                 await processDirectoryHandle(item.handle, item.name);
-                                
+
                                 const targetName = validImages[0].name;
                                 const foundIndex = files.findIndex(f => f.name === targetName);
                                 if (foundIndex !== -1) {
                                     currentIndex = foundIndex;
                                 }
-                                
+
                                 isSingleFileMode = false;
                                 renderViewer();
                                 break;
                             }
                         }
-                    } catch (e) {}
+                    } catch (e) { }
                 }
             }
         }
@@ -6174,11 +6309,11 @@ if ('launchQueue' in window) {
 }
 
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === "open_directory" && request.handle) {
-      processDirectoryHandle(request.handle);
-    }
-  });
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.action === "open_directory" && request.handle) {
+            processDirectoryHandle(request.handle);
+        }
+    });
 }
 
 let resizeDebounce = null;
@@ -6195,14 +6330,14 @@ window.addEventListener('resize', () => {
 
 /* SERVICEWORKER: PWA ONLY. DO NOT FORGET. */
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
-      .then(registration => {
-        console.log('Service Worker registered with scope:', registration.scope);
-      })
-      .catch(error => {
-        console.log('Service Worker registration failed:', error);
-      });
-  });
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+            .then(registration => {
+                console.log('Service Worker registered with scope:', registration.scope);
+            })
+            .catch(error => {
+                console.log('Service Worker registration failed:', error);
+            });
+    });
 }
 /* -------------------------------------- */
