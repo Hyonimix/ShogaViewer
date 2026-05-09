@@ -3899,8 +3899,18 @@ function switchToGrid() {
     const controlsWrapper = document.createElement('div');
     controlsWrapper.className = 'header-controls-wrapper';
 
+    const btnGridSearch = document.createElement('button');
+    btnGridSearch.className = 'btn-grid-search subtle-icon-btn';
+    btnGridSearch.style.display = 'none';
+    btnGridSearch.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>`;
+    btnGridSearch.addEventListener('click', () => {
+        controlsWrapper.classList.toggle('search-active');
+    });
+    controlsWrapper.appendChild(btnGridSearch);
+
     const createSearchFilter = (type) => {
         const wrapper = document.createElement('div');
+        wrapper.className = 'grid-search-input-wrapper';
         wrapper.style.position = 'relative';
         wrapper.style.display = 'flex';
         wrapper.style.alignItems = 'center';
@@ -5619,15 +5629,20 @@ function updateUiHideEngine(timestamp) {
 
     let speedMultiplier = 1;
     if (lastPointerType === 'mouse') {
-        if (lastKnownMouseY >= 0 && lastKnownMouseY <= triggerAreaH) {
-            speedMultiplier = 1;
-        } else {
-            if (isUiRevealedByClick) {
+        if (lastKnownMouseY >= 0) {
+            const isBottomMode = (window.innerWidth / window.innerHeight) <= (9 / 16);
+            const effectiveLastKnownMouseY = isBottomMode ? window.innerHeight - lastKnownMouseY : lastKnownMouseY;
+
+            if (effectiveLastKnownMouseY <= triggerAreaH) {
                 speedMultiplier = 1;
             } else {
-                let remainingSpace = Math.max(1, window.innerHeight - triggerAreaH);
-                let ratio = Math.max(0, Math.min(1, (lastKnownMouseY - triggerAreaH) / remainingSpace));
-                speedMultiplier = 2 + (ratio * 5);
+                if (isUiRevealedByClick) {
+                    speedMultiplier = 1;
+                } else {
+                    let remainingSpace = Math.max(1, window.innerHeight - triggerAreaH);
+                    let ratio = Math.max(0, Math.min(1, (effectiveLastKnownMouseY - triggerAreaH) / remainingSpace));
+                    speedMultiplier = 2 + (ratio * 5);
+                }
             }
         }
     }
@@ -5699,9 +5714,12 @@ dom.viewerArea.addEventListener('pointermove', (e) => {
                 moveThreshold = 300;
             }
 
+            const isBottomMode = (window.innerWidth / window.innerHeight) <= (9 / 16);
+            const effectiveY = isBottomMode ? window.innerHeight - e.clientY : e.clientY;
+
             if (dom.body.classList.contains('ui-hidden')) {
                 if (noPanelsOpen && !(isDragging || isPanning) && timeSinceDrag > 500) {
-                    if (e.clientY <= triggerAreaH) {
+                    if (effectiveY <= triggerAreaH) {
                         if (prevMouseX !== -1 && prevMouseY !== -1) {
                             mouseMoveAccumulator += Math.hypot(e.clientX - prevMouseX, e.clientY - prevMouseY);
                         }
@@ -5718,7 +5736,7 @@ dom.viewerArea.addEventListener('pointermove', (e) => {
                 }
             } else {
                 mouseMoveAccumulator = 0;
-                if (noPanelsOpen && e.clientY <= triggerAreaH) startUiHideEngine();
+                if (noPanelsOpen && effectiveY <= triggerAreaH) startUiHideEngine();
             }
             prevMouseX = e.clientX;
             prevMouseY = e.clientY;
