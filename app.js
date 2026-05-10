@@ -4850,13 +4850,13 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                                 const start = performance.now();
                                 const timeoutId = setTimeout(() => {
                                     if (!fetchResolved) {
-                                        const elapsed = (performance.now() - start) / 1000;
-                                        const speed = received / elapsed;
-                                        if (speed < 512000 && img._placeholder) {
-                                            img._placeholder.style.filter = 'none';
+                                        if (img._placeholder) {
+                                            img._placeholder.style.transition = 'filter 0.5s ease, opacity 0.5s ease';
+                                            img._placeholder.style.filter = 'blur(0px)';
+                                            img._placeholder.style.opacity = '1';
                                         }
                                     }
-                                }, 3000);
+                                }, 1000);
 
                                 try {
                                     const response = await fetch(url);
@@ -5204,13 +5204,13 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                                     const start = performance.now();
                                     const timeoutId = setTimeout(() => {
                                         if (!fetchResolved) {
-                                            const elapsed = (performance.now() - start) / 1000;
-                                            const speed = received / elapsed;
-                                            if (speed < 512000 && img._placeholder) {
-                                                img._placeholder.style.filter = 'none';
+                                            if (img._placeholder) {
+                                                img._placeholder.style.transition = 'filter 0.5s ease, opacity 0.5s ease';
+                                                img._placeholder.style.filter = 'blur(0px)';
+                                                img._placeholder.style.opacity = '1';
                                             }
                                         }
-                                    }, 3000);
+                                    }, 1000);
 
                                     try {
                                         const response = await fetch(url);
