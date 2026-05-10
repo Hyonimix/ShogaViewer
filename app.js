@@ -2813,7 +2813,8 @@ async function performUpscale(srcImg, actualMode, renderRatio, targetRatio, nw, 
 
     const PADDING = 4;
     let TILE_SIZE = Math.floor(MAX_GL_TEXTURE_SIZE / renderRatio) - (PADDING * 2);
-    TILE_SIZE = Math.max(256, Math.min(1024, TILE_SIZE));
+    let maxTileSize = isLowEndHardware ? 512 : 1024;
+    TILE_SIZE = Math.max(256, Math.min(maxTileSize, TILE_SIZE));
 
     const chunkCanvas = document.createElement('canvas');
     const chunkCtx = chunkCanvas.getContext('2d', { alpha: false });
@@ -3080,7 +3081,7 @@ async function processNextPreload() {
         try {
             const runSinglePass = async (inputImg, inW, inH, ratio) => {
                 return new Promise((resolve, reject) => {
-                    let isValid = () => upscaleCache.get(actualCacheKey) === 'processing' && (!fallbackActive || upscaleCache.get(cacheKey) === 'processing') && viewMode === 'VIEWER' && Math.abs(idx - currentIndex) <= 16;
+                    let isValid = () => upscaleCache.get(actualCacheKey) === 'processing' && (!fallbackActive || upscaleCache.get(cacheKey) === 'processing') && viewMode === 'VIEWER' && Math.abs(idx - currentIndex) <= 16 && !isPanning && !isDragging;
                     enqueueTask(
                         isValid,
                         async () => {
@@ -3268,6 +3269,8 @@ const executeCrossfadeSwap = (img, targetUrl, tierName) => {
                 overlay.style.pointerEvents = 'none';
                 overlay.style.objectFit = computedStyle.objectFit;
                 overlay.style.objectPosition = computedStyle.objectPosition;
+                overlay.style.willChange = 'opacity, transform';
+                overlay.style.transform = 'translateZ(0)';
 
                 img.parentElement.style.position = 'relative';
                 img.parentElement.appendChild(overlay);
@@ -3336,6 +3339,8 @@ const executeCrossfadeSwap = (img, targetUrl, tierName) => {
         overlay.style.pointerEvents = 'none';
         overlay.style.objectFit = computedStyle.objectFit;
         overlay.style.objectPosition = computedStyle.objectPosition;
+        overlay.style.willChange = 'opacity, transform';
+        overlay.style.transform = 'translateZ(0)';
 
         img.parentElement.appendChild(overlay);
 
@@ -3584,7 +3589,7 @@ function applyUpscaleOverlays() {
                 try {
                     const runSinglePass = async (inputImg, inW, inH, ratio) => {
                         return new Promise((resolve, reject) => {
-                            let isValid = () => img.dataset.upscaleProcessingKey === cacheKey && viewMode === 'VIEWER';
+                            let isValid = () => img.dataset.upscaleProcessingKey === cacheKey && viewMode === 'VIEWER' && !isPanning && !isDragging;
                             enqueueTask(
                                 isValid,
                                 async () => {
@@ -5830,14 +5835,14 @@ dom.viewerArea.addEventListener('pointermove', (e) => {
             lastKnownMouseY = e.clientY;
             let timeSinceDrag = Date.now() - lastDragEndTime;
             let triggerAreaH = 0;
-            let moveThreshold = 200;
+            let moveThreshold = 100;
 
             if (timeSinceDrag > 3000) {
                 triggerAreaH = window.innerHeight * 0.25;
-                moveThreshold = 200;
+                moveThreshold = 100;
             } else if (timeSinceDrag > 500) {
                 triggerAreaH = window.innerHeight * 0.125;
-                moveThreshold = 300;
+                moveThreshold = 150;
             }
 
             const isBottomMode = (window.innerWidth / window.innerHeight) <= (9 / 16);
