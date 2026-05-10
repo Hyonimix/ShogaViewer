@@ -59,10 +59,7 @@ body, html {
     transition: opacity 0.3s;
     cursor: pointer;
 }
-@media (pointer: coarse), (max-aspect-ratio: 9/16) {
-    #btn-mobile-back { display: block; }
-    body.ui-hidden #btn-mobile-back { opacity: 0; pointer-events: none; }
-}
+body[data-view-mode="VIEWER"].ui-hidden #btn-mobile-back { opacity: 0; pointer-events: none; }
 
 #top-bar {
     position: absolute;
@@ -709,7 +706,7 @@ button:focus-visible, input:focus-visible {
 img.spread-left, video.spread-left { object-position: right center !important; }
 img.spread-right, video.spread-right { object-position: left center !important; }
 
-body.ui-hidden #top-bar { transform: translateX(-50%) translateY(-100px); opacity: 0; }
+body[data-view-mode="VIEWER"].ui-hidden #top-bar { transform: translateX(-50%) translateY(-100px); opacity: 0; }
 body.panning * { cursor: default !important; }
 body.animating #viewer-slider, 
 body.animating #viewer-content { transition: transform 0.25s ease-out; }
@@ -840,7 +837,7 @@ body.animating #viewer-content { transition: transform 0.25s ease-out; }
                 top: auto;
                 bottom: 20px;
             }
-            body.ui-hidden #top-bar {
+            body[data-view-mode="VIEWER"].ui-hidden #top-bar {
                 transform: translateX(-50%) translateY(100px);
             }
             .panel {

@@ -670,6 +670,7 @@ async function verifyPermission(fileHandle) {
 
 const dom = {
     body: document.body,
+    btnMobileBack: document.getElementById('btn-mobile-back'),
     topBar: document.getElementById('top-bar'),
     btnOpenMain: document.getElementById('btn-open-main'),
     openDropdown: document.getElementById('open-dropdown'),
@@ -739,11 +740,13 @@ document.head.appendChild(__swipeStyle);
 function switchToIdle() {
     pointers = []; isPanning = false; isDragging = false; isGridSwiping = false; isGridPulling = false; initialDistance = 0;
     viewMode = 'IDLE';
+    dom.body.dataset.viewMode = 'IDLE';
     dom.gridArea.style.display = 'none';
     dom.viewerArea.style.display = 'none';
     dom.btnGrid.style.display = 'none';
     dom.btnInfo.style.display = 'none';
     dom.btnSave.style.display = 'none';
+    if (dom.btnMobileBack) dom.btnMobileBack.style.display = 'none';
     dom.idleScreen.style.display = 'flex';
     dom.body.classList.remove('ui-hidden');
 }
@@ -3173,8 +3176,11 @@ async function processNextPreload() {
                 const newUrl = URL.createObjectURL(blob);
                 if (upscaleCache.size >= 64) {
                     const activeUrls = new Set();
-                    for (let i = Math.max(0, currentIndex - 2); i <= Math.min(files.length - 1, currentIndex + 2); i++) {
-                        if (urlCache.has(i)) activeUrls.add(urlCache.get(i));
+                    for (let i = Math.max(0, currentIndex - 16); i <= Math.min(files.length - 1, currentIndex + 16); i++) {
+                        if (files[i]) {
+                            if (files[i].isJellyfin) activeUrls.add(getFileUrl(i));
+                            else if (urlCache.has(i)) activeUrls.add(urlCache.get(i));
+                        }
                     }
                     for (const [k, v] of upscaleCache.entries()) {
                         if (v !== 'processing') {
@@ -3716,8 +3722,11 @@ function applyUpscaleOverlays() {
                             }
                             if (upscaleCache.size >= 64) {
                                 const activeUrls = new Set();
-                                for (let i = Math.max(0, currentIndex - 2); i <= Math.min(files.length - 1, currentIndex + 2); i++) {
-                                    if (urlCache.has(i)) activeUrls.add(urlCache.get(i));
+                                for (let i = Math.max(0, currentIndex - 16); i <= Math.min(files.length - 1, currentIndex + 16); i++) {
+                                    if (files[i]) {
+                                        if (files[i].isJellyfin) activeUrls.add(getFileUrl(i));
+                                        else if (urlCache.has(i)) activeUrls.add(urlCache.get(i));
+                                    }
                                 }
                                 for (const [k, v] of upscaleCache.entries()) {
                                     if (v !== 'processing') {
@@ -3862,12 +3871,14 @@ function switchToGrid() {
     destroyAllHls();
     pointers = []; isPanning = false; isDragging = false; isGridSwiping = false; isGridPulling = false; initialDistance = 0;
     viewMode = 'GRID';
+    dom.body.dataset.viewMode = 'GRID';
     dom.body.classList.remove('ui-hidden');
     dom.gridArea.style.display = 'grid';
     dom.viewerArea.style.display = 'none';
     dom.btnGrid.style.display = 'none';
     dom.btnInfo.style.display = 'none';
     dom.btnSave.style.display = 'none';
+    if (dom.btnMobileBack) dom.btnMobileBack.style.display = 'block';
 
     if (isGridRendered) {
         const currentItem = dom.gridArea.querySelector(`.grid-item[data-index="${currentIndex}"]`);
@@ -4050,27 +4061,6 @@ function switchToGrid() {
 
         controlsWrapper.appendChild(fileSortGroup);
         controlsWrapper.appendChild(createSearchFilter('file'));
-    }
-
-    if (dirStack.length > 1) {
-        const btnUp = document.createElement('button');
-        btnUp.className = 'btn-up';
-        btnUp.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 10 4 15 9 20"></polyline><path d="M20 4v7a4 4 0 0 1-4 4H4"></path></svg>`;
-        btnUp.addEventListener('click', async () => {
-            dirStack.pop();
-            const parent = dirStack[dirStack.length - 1];
-            folderFilterText = parent.folderFilterText || '';
-            fileFilterText = parent.fileFilterText || '';
-            if (parent.isJellyfin) {
-                await loadJellyfinFolder(parent.id, parent.name);
-            } else {
-                await processDirectoryHandle(parent.handle, parent.name);
-            }
-            requestAnimationFrame(() => {
-                dom.gridArea.scrollTop = parent.scrollTop || 0;
-            });
-        });
-        controlsWrapper.appendChild(btnUp);
     }
 
     headerContainer.appendChild(controlsWrapper);
@@ -4378,11 +4368,13 @@ function switchToViewer() {
     if (viewMode !== 'VIEWER') history.pushState({ view: 'VIEWER' }, '');
     pointers = []; isPanning = false; isDragging = false; isGridSwiping = false; isGridPulling = false; initialDistance = 0;
     viewMode = 'VIEWER';
+    dom.body.dataset.viewMode = 'VIEWER';
     dom.gridArea.style.display = 'none';
     dom.viewerArea.style.display = 'block';
     dom.btnGrid.style.display = 'block';
     dom.btnInfo.style.display = 'block';
     dom.btnSave.style.display = 'block';
+    if (dom.btnMobileBack) dom.btnMobileBack.style.display = 'block';
     dom.body.classList.add('ui-hidden');
     renderViewer();
 }
@@ -4425,16 +4417,45 @@ function updateInfoPanel() {
     let html = '';
     indices.forEach((idx, i) => {
         const f = files[idx];
+        const mediaEl = dom.viewerContent.querySelector(`.shoga-main-media[data-file-index="${idx}"]`);
 
         let sizeDisplay = (f.size / (1024 * 1024)).toFixed(2) + ' MB';
-        if (f.size === 0 && f.isJellyfin) sizeDisplay = 'Unknown (Server Stream)';
+        if (f.size === 0 && f.isJellyfin) {
+            sizeDisplay = (f.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(f.name)) ? 'Unknown (Server Stream)' : 'Unknown (Pending)';
+        }
+
+        let w = f.nw || (mediaEl ? (mediaEl.naturalWidth || mediaEl.videoWidth) : 0);
+        let h = f.nh || (mediaEl ? (mediaEl.naturalHeight || mediaEl.videoHeight) : 0);
+        let dimDisplay = (w && h) ? `${w} x ${h}` : 'Unknown';
+
+        let upscaleDisplay = 'Native / Bilinear';
+        if (mediaEl && mediaEl.dataset.upscaleAppliedTier) {
+            const tier = mediaEl.dataset.upscaleAppliedTier;
+            if (tier !== 'NATIVE_BILINEAR') {
+                const match = tier.match(/_(BILINEAR|ADPTV_SHOGA|ANIME4K|XBRZ|FSR)_?([\d\.]*)$/);
+                if (match) {
+                    upscaleDisplay = `${match[1]} (x${match[2] || '?'})`;
+                } else {
+                    const parts = tier.split('_');
+                    if (parts.length > 1) {
+                        let ratio = parts.pop();
+                        upscaleDisplay = `${parts.pop()} (x${ratio})`;
+                    } else {
+                        upscaleDisplay = tier;
+                    }
+                }
+            }
+        }
 
         if (mode === 'SPREAD' && indices.length === 2) {
             html += `<div class="panel-title">${i === 0 ? 'LEFT PAGE' : 'RIGHT PAGE'}</div>`;
         }
 
         html += `<div class="info-row"><span class="info-label">FILENAME</span><span class="info-value">${escapeHtml(f.name)}</span></div>
+                 <div class="info-row"><span class="info-label">TYPE</span><span class="info-value">${escapeHtml(f.type || 'Unknown')}</span></div>
                  <div class="info-row"><span class="info-label">SIZE</span><span class="info-value">${sizeDisplay}</span></div>
+                 <div class="info-row"><span class="info-label">DIMENSIONS</span><span class="info-value">${dimDisplay}</span></div>
+                 <div class="info-row"><span class="info-label">UPSCALE</span><span class="info-value">${escapeHtml(upscaleDisplay)}</span></div>
                  <div class="info-row"><span class="info-label">INDEX</span><span class="info-value">${idx + 1} / ${files.length}</span></div>`;
 
         if (i < indices.length - 1) {
@@ -4486,6 +4507,10 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
             if (child.tagName && child.tagName.toLowerCase() === 'video') {
                 child.removeAttribute('src');
                 child.load();
+            }
+            if (child.tagName && child.tagName.toLowerCase() === 'img' && child.dataset.jellyfinBlobUrl) {
+                URL.revokeObjectURL(child.dataset.jellyfinBlobUrl);
+                delete child.dataset.jellyfinBlobUrl;
             }
         });
         slot.replaceChildren();
@@ -4807,12 +4832,57 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                             imgResolve();
                         };
 
-                        if (!isAnim && upscaleMode !== 'OFF' && cachedUrl && cachedUrl !== 'error' && cachedUrl !== 'processing' && cachedUrl !== 'skipped') {
+                        let finalUrlToSet = url;
+                        let useCache = (!isAnim && upscaleMode !== 'OFF' && cachedUrl && cachedUrl !== 'error' && cachedUrl !== 'processing' && cachedUrl !== 'skipped');
+
+                        if (useCache) {
                             img.src = cachedUrl;
                             img.dataset.upscaleAppliedTier = cacheKey;
                         } else {
-                            img.src = url;
-                            if (upscaleMode !== 'OFF') img.dataset.upscaleAppliedTier = 'NATIVE_BILINEAR';
+                            if (files[idx].isJellyfin) {
+                                let fetchResolved = false;
+                                let received = 0;
+                                const start = performance.now();
+                                const timeoutId = setTimeout(() => {
+                                    if (!fetchResolved) {
+                                        const elapsed = (performance.now() - start) / 1000;
+                                        const speed = received / elapsed;
+                                        if (speed < 512000 && img._placeholder) {
+                                            img._placeholder.style.filter = 'none';
+                                        }
+                                    }
+                                }, 3000);
+
+                                try {
+                                    const response = await fetch(url);
+                                    const reader = response.body.getReader();
+                                    const chunks = [];
+                                    while (true) {
+                                        const { done, value } = await reader.read();
+                                        if (done) break;
+                                        chunks.push(value);
+                                        received += value.length;
+                                    }
+                                    fetchResolved = true;
+                                    const elapsedSec = (performance.now() - start) / 1000;
+                                    const speedKbps = (received / 1024) / elapsedSec;
+                                    console.info(`[Network Speed] ${speedKbps.toFixed(2)} KB/s (Time: ${elapsedSec.toFixed(2)}s, Size: ${(received / 1024).toFixed(2)} KB)`);
+                                    files[idx].size = received;
+                                    const blob = new Blob(chunks, { type: files[idx].type || 'image/jpeg' });
+                                    finalUrlToSet = URL.createObjectURL(blob);
+                                    if (!dom.infoPanel.classList.contains('hidden')) updateInfoPanel();
+                                    img.dataset.jellyfinBlobUrl = finalUrlToSet;
+                                } catch (e) {
+                                    fetchResolved = true;
+                                }
+                            }
+
+                            img.src = finalUrlToSet;
+                            if (upscaleMode !== 'OFF') {
+                                img.dataset.upscaleAppliedTier = 'NATIVE_BILINEAR';
+                            } else {
+                                delete img.dataset.upscaleAppliedTier;
+                            }
                         }
                     }
                 });
@@ -4832,6 +4902,10 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
             const url = getFileUrl(idx);
             const mediaEl = currentItems[i];
             if (mediaEl.dataset.originalUrl !== url || (mediaEl.tagName.toLowerCase() === 'video' && !mediaEl.hasAttribute('src'))) {
+                if (mediaEl.dataset.jellyfinBlobUrl) {
+                    URL.revokeObjectURL(mediaEl.dataset.jellyfinBlobUrl);
+                    delete mediaEl.dataset.jellyfinBlobUrl;
+                }
 
                 const expectedClass = (mode === 'SPREAD' && indices.length === 2) ? (i === 0 ? 'spread-left' : 'spread-right') : '';
 
@@ -5112,11 +5186,52 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                                 imgResolve();
                             };
 
-                            if (!isAnim && upscaleMode !== 'OFF' && cachedUrl && cachedUrl !== 'error' && cachedUrl !== 'processing' && cachedUrl !== 'skipped') {
+                            let finalUrlToSet = url;
+                            let useCache = (!isAnim && upscaleMode !== 'OFF' && cachedUrl && cachedUrl !== 'error' && cachedUrl !== 'processing' && cachedUrl !== 'skipped');
+
+                            if (useCache) {
                                 img.src = cachedUrl;
                                 img.dataset.upscaleAppliedTier = cacheKey;
                             } else {
-                                img.src = url;
+                                if (files[idx].isJellyfin) {
+                                    let fetchResolved = false;
+                                    let received = 0;
+                                    const start = performance.now();
+                                    const timeoutId = setTimeout(() => {
+                                        if (!fetchResolved) {
+                                            const elapsed = (performance.now() - start) / 1000;
+                                            const speed = received / elapsed;
+                                            if (speed < 512000 && img._placeholder) {
+                                                img._placeholder.style.filter = 'none';
+                                            }
+                                        }
+                                    }, 3000);
+
+                                    try {
+                                        const response = await fetch(url);
+                                        const reader = response.body.getReader();
+                                        const chunks = [];
+                                        while (true) {
+                                            const { done, value } = await reader.read();
+                                            if (done) break;
+                                            chunks.push(value);
+                                            received += value.length;
+                                        }
+                                        fetchResolved = true;
+                                        const elapsedSec = (performance.now() - start) / 1000;
+                                        const speedKbps = (received / 1024) / elapsedSec;
+                                        console.info(`[Network Speed] ${speedKbps.toFixed(2)} KB/s (Time: ${elapsedSec.toFixed(2)}s, Size: ${(received / 1024).toFixed(2)} KB)`);
+                                        files[idx].size = received;
+                                        const blob = new Blob(chunks, { type: files[idx].type || 'image/jpeg' });
+                                        finalUrlToSet = URL.createObjectURL(blob);
+                                        if (!dom.infoPanel.classList.contains('hidden')) updateInfoPanel();
+                                        img.dataset.jellyfinBlobUrl = finalUrlToSet;
+                                    } catch (e) {
+                                        fetchResolved = true;
+                                    }
+                                }
+
+                                img.src = finalUrlToSet;
                                 if (upscaleMode !== 'OFF') {
                                     img.dataset.upscaleAppliedTier = 'NATIVE_BILINEAR';
                                 } else {
@@ -5279,12 +5394,16 @@ function applyContentTransform() {
 function cleanCaches() {
     let revokedUrls = 0;
     const activeUrls = new Set();
+    for (let i = Math.max(0, currentIndex - 16); i <= Math.min(files.length - 1, currentIndex + 16); i++) {
+        if (files[i]) {
+            if (files[i].isJellyfin) activeUrls.add(getFileUrl(i));
+            else if (urlCache.has(i)) activeUrls.add(urlCache.get(i));
+        }
+    }
     for (const [idx, url] of urlCache.entries()) {
         if (Math.abs(idx - currentIndex) > 16) {
             if (url.startsWith('blob:')) { URL.revokeObjectURL(url); revokedUrls++; }
             urlCache.delete(idx);
-        } else {
-            activeUrls.add(url);
         }
     }
     for (const [key, url] of upscaleCache.entries()) {
@@ -5690,6 +5809,13 @@ const uiObserver = new MutationObserver((mutations) => {
     });
 });
 uiObserver.observe(dom.body, { attributes: true, attributeOldValue: true });
+
+const infoPanelObserver = new MutationObserver(() => {
+    if (!dom.infoPanel.classList.contains('hidden')) {
+        updateInfoPanel();
+    }
+});
+infoPanelObserver.observe(dom.viewerContent, { attributes: true, attributeFilter: ['data-upscale-applied-tier'], subtree: true });
 
 dom.viewerArea.addEventListener('pointermove', (e) => {
     if (isDragging || isPanning) {
@@ -6226,16 +6352,25 @@ window.addEventListener('pointermove', (e) => {
     }
 }, { passive: false });
 
-const btnMobileBack = document.getElementById('btn-mobile-back');
-if (btnMobileBack) {
-    btnMobileBack.addEventListener('click', (e) => {
+if (dom.btnMobileBack) {
+    dom.btnMobileBack.addEventListener('click', async (e) => {
         e.stopPropagation();
         if (viewMode === 'VIEWER') {
             switchToGrid();
         } else if (viewMode === 'GRID') {
             if (dirStack.length > 1) {
-                const btnUp = document.querySelector('.btn-up');
-                if (btnUp) btnUp.click();
+                dirStack.pop();
+                const parent = dirStack[dirStack.length - 1];
+                folderFilterText = parent.folderFilterText || '';
+                fileFilterText = parent.fileFilterText || '';
+                if (parent.isJellyfin) {
+                    await loadJellyfinFolder(parent.id, parent.name);
+                } else {
+                    await processDirectoryHandle(parent.handle, parent.name);
+                }
+                requestAnimationFrame(() => {
+                    dom.gridArea.scrollTop = parent.scrollTop || 0;
+                });
             } else {
                 dom.btnHome.click();
             }
