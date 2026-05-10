@@ -5339,6 +5339,83 @@ function renderViewer() {
     currentRenderToken++;
     const token = currentRenderToken;
 
+    const preInjectPlaceholder = (slot, targetIndex) => {
+        if (targetIndex < 0 || targetIndex >= files.length) {
+            slot.replaceChildren();
+            return;
+        }
+        if (slot.children.length > 0) return;
+
+        const rawGroup = getSpreadGroup(targetIndex);
+        let indices = [...rawGroup];
+        if (mode === 'SPREAD' && indices.length === 2 && readDir === 'RTL') indices.reverse();
+
+        indices.forEach((idx, i) => {
+            const file = files[idx];
+            if (!file || file.isBroken) return;
+            
+            const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(file.name);
+            const isGif = file.type === 'image/gif' || /\.gif$/i.test(file.name);
+            
+            if (!isVideo && !isGif) return;
+
+            let placeholderSrc = null;
+            const gridCanvas = document.querySelector(`.grid-item[data-index="${idx}"] canvas.loaded`);
+            if (gridCanvas) {
+                placeholderSrc = gridCanvas.toDataURL('image/jpeg', 0.5);
+            } else if (file.isJellyfin) {
+                placeholderSrc = `${file.serverUrl}/Items/${file.id}/Images/Primary?fillWidth=400&api_key=${file.accessToken}`;
+            }
+
+            if (placeholderSrc) {
+                const placeholder = document.createElement('img');
+                placeholder.src = placeholderSrc;
+                
+                let className = 'shoga-placeholder';
+                if (mode === 'SPREAD' && indices.length === 2) {
+                    className += i === 0 ? ' spread-left' : ' spread-right';
+                }
+                placeholder.className = className;
+                
+                let customCss = 'position:absolute; z-index:-1; filter:blur(10px); opacity:0.5; pointer-events:none; ';
+
+                if (mode === 'SPREAD' && indices.length === 2) {
+                    if (fitMode === 'WIDTH') {
+                        customCss += i === 0
+                            ? 'width:50%; height:auto; left:0; top:auto; bottom:auto; object-fit:contain; object-position:right center;'
+                            : 'width:50%; height:auto; right:0; top:auto; bottom:auto; object-fit:contain; object-position:left center;';
+                    } else {
+                        customCss += i === 0
+                            ? 'width:50%; height:100%; left:0; top:0; object-fit:contain; object-position:right center;'
+                            : 'width:50%; height:100%; right:0; top:0; object-fit:contain; object-position:left center;';
+                    }
+                } else {
+                    if (fitMode === 'WIDTH') {
+                        customCss += 'width:100%; height:auto; left:0; right:0; margin:auto; top:auto; bottom:auto; object-fit:contain; object-position:center;';
+                    } else if (fitMode === 'HEIGHT') {
+                        customCss += 'width:auto; height:100%; left:0; right:0; margin:auto; top:0; bottom:0; object-fit:contain; object-position:center;';
+                    } else if (fitMode === 'ORIGINAL') {
+                        customCss += 'width:auto; height:auto; left:0; right:0; margin:auto; top:auto; bottom:auto; object-fit:contain; object-position:center;';
+                    } else {
+                        customCss += 'width:100%; height:100%; left:0; top:0; object-fit:contain; object-position:center;';
+                    }
+                }
+
+                placeholder.style.cssText = customCss;
+                slot.style.position = 'relative';
+                slot.appendChild(placeholder);
+            }
+        });
+    };
+
+    if (readDir === 'LTR') {
+        preInjectPlaceholder(dom.slots.prev, prevIndex);
+        preInjectPlaceholder(dom.slots.next, nextIndex);
+    } else {
+        preInjectPlaceholder(dom.slots.prev, nextIndex);
+        preInjectPlaceholder(dom.slots.next, prevIndex);
+    }
+
     populateSlot(dom.viewerContent, currentIndex, token, () => {
         if (currentRenderToken !== token || viewMode !== 'VIEWER') return;
         if (readDir === 'LTR') {
