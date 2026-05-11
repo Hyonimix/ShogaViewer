@@ -118,6 +118,9 @@ const upscaleCache = new Map();
 
 let preloadQueueTimer = null;
 let isPreloading = false;
+let lightweightPreloadQueue = [];
+let isLightweightPreloading = false;
+let activeLightweightIndex = -1;
 
 let isSingleFileMode = false;
 let pendingBookmarkRestoreId = null;
@@ -888,10 +891,42 @@ const lazyThumbnailObserver = new IntersectionObserver((entries) => {
             if (file) {
                 generateHighPerfThumbnail(file, canvas);
                 lazyThumbnailObserver.unobserve(canvas);
+                const fIdx = files.indexOf(file);
+                if (fIdx !== -1 && !lightweightPreloadQueue.includes(fIdx) && !urlCache.has(fIdx)) {
+                    lightweightPreloadQueue.push(fIdx);
+                    processLightweightQueue();
+                }
             }
         }
     });
 }, { root: dom.gridArea, rootMargin: '200px' });
+
+async function processLightweightQueue() {
+    if (isLightweightPreloading || lightweightPreloadQueue.length === 0) return;
+    if (viewMode !== 'GRID') {
+        lightweightPreloadQueue = [];
+        return;
+    }
+    isLightweightPreloading = true;
+    const idx = lightweightPreloadQueue.shift();
+    activeLightweightIndex = idx;
+
+    try {
+        const file = files[idx];
+        if (file && !file.isBroken && !file.isJellyfin && !file.type.startsWith('video/')) {
+            const url = getFileUrl(idx);
+            const img = new Image();
+            img.src = url;
+            await img.decode();
+        }
+    } catch (e) { }
+
+    activeLightweightIndex = -1;
+    isLightweightPreloading = false;
+    if (lightweightPreloadQueue.length > 0) {
+        setTimeout(processLightweightQueue, 50);
+    }
+}
 
 async function generateHighPerfThumbnail(file, canvas) {
     const THUMB_SIZE = isLowEndHardware ? 150 : 300;
@@ -1522,6 +1557,10 @@ async function restoreBookmark(id) {
     upscaleCache.forEach(url => { if (url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
     upscaleCache.clear();
 
+    lightweightPreloadQueue = [];
+    activeLightweightIndex = -1;
+    isLightweightPreloading = false;
+
     files = restoredFiles;
     currentTitle = bk.state.title;
     document.title = currentTitle;
@@ -1676,10 +1715,14 @@ function getFileUrl(index) {
     }
     const url = URL.createObjectURL(file);
     urlCache.set(index, url);
-    if (urlCache.size > 64) {
-        const firstKey = urlCache.keys().next().value;
-        URL.revokeObjectURL(urlCache.get(firstKey));
-        urlCache.delete(firstKey);
+    if (urlCache.size > 128) {
+        for (const key of urlCache.keys()) {
+            if (Math.abs(key - currentIndex) > 16 && !lightweightPreloadQueue.includes(key) && key !== activeLightweightIndex) {
+                URL.revokeObjectURL(urlCache.get(key));
+                urlCache.delete(key);
+                break;
+            }
+        }
     }
     return url;
 }
@@ -1777,6 +1820,10 @@ dom.btnHome.addEventListener('click', () => {
 
     upscaleCache.forEach(url => { if (url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
     upscaleCache.clear();
+
+    lightweightPreloadQueue = [];
+    activeLightweightIndex = -1;
+    isLightweightPreloading = false;
 
     currentTitle = 'Shoga Viewer';
     document.title = currentTitle;
@@ -2014,6 +2061,10 @@ async function loadJellyfinFolder(parentId = null, folderName = 'Jellyfin') {
         isGridRendered = false;
         isSingleFileMode = false;
 
+        lightweightPreloadQueue = [];
+        activeLightweightIndex = -1;
+        isLightweightPreloading = false;
+
         if (!parentId) {
             dirStack = [{ isJellyfin: true, id: null, name: 'Jellyfin' }];
         }
@@ -2141,6 +2192,10 @@ function applyViewerSettingChange(action) {
 
         const destroySlot = (slot) => {
             Array.from(slot.children).forEach(child => {
+                if (child._fetchAbortController) {
+                    child._fetchAbortController.abort();
+                    delete child._fetchAbortController;
+                }
                 if (child.hlsInstance) {
                     child.hlsInstance.destroy();
                     delete child.hlsInstance;
@@ -2917,6 +2972,8 @@ async function processNextPreload() {
     let actualMode = upscaleMode;
     let isBilinear = actualMode === 'BILINEAR';
     let preloadLogQueue = [];
+    let targetItemMode = actualMode;
+    let targetItemIsBilinear = isBilinear;
 
     for (let i = 1; i <= MAX_PRELOAD; i++) {
         let rightIdx = currentIndex + i;
@@ -2935,11 +2992,14 @@ async function processNextPreload() {
                 }
 
                 const origUrl = getFileUrl(idx);
-                let checkRatio = (isHighMemMode && is4xEnabled && !isBilinear && actualMode !== 'ADPTV_SHOGA') ? 4.0 : (isBilinear ? 1.0 : 2.0);
+                let itemMode = actualMode;
+                let itemIsBilinear = isBilinear;
+                let checkRatio = (isHighMemMode && is4xEnabled && !itemIsBilinear && itemMode !== 'ADPTV_SHOGA') ? 4.0 : (itemIsBilinear ? 1.0 : 2.0);
 
-                if (actualMode === 'ADPTV_SHOGA') {
+                if (itemMode === 'ADPTV_SHOGA') {
                     if (files[idx].nw) {
                         let displayW = window.innerWidth * currentZoom;
+                        let displayH = window.innerHeight * currentZoom;
                         if (getCurrentLayoutMode() === 'SPREAD' && getSpreadGroup(idx).length === 2) displayW *= 0.5;
                         let dRatio = displayW / files[idx].nw;
                         checkRatio = Math.ceil(dRatio * 10) / 10;
@@ -2949,6 +3009,12 @@ async function processNextPreload() {
                             checkRatio = Math.max(1.0, checkRatio - 0.1);
                         }
                         checkRatio = Math.round(checkRatio * 10) / 10;
+
+                        if (checkRatio < 1.0 && (files[idx].nw >= displayW * 2 || files[idx].nh >= displayH * 2)) {
+                            itemMode = 'BILINEAR';
+                            itemIsBilinear = true;
+                            checkRatio = 1.0;
+                        }
                     } else {
                         checkRatio = -1;
                     }
@@ -2960,7 +3026,7 @@ async function processNextPreload() {
                     preloadLogQueue.push(` -> Needs Dimension Data`);
                 } else {
                     for (let [key, cacheVal] of upscaleCache.entries()) {
-                        if (key.startsWith(origUrl + '_' + actualMode + '_')) {
+                        if (key.startsWith(origUrl + '_' + itemMode + '_')) {
                             let cachedRatio = parseFloat(key.split('_').pop());
                             if (!isNaN(cachedRatio) && cachedRatio >= checkRatio) {
                                 if (cacheVal !== 'error' && cacheVal !== 'skipped') {
@@ -2975,6 +3041,8 @@ async function processNextPreload() {
 
                 if (needsProcessing) {
                     targetIndex = idx;
+                    targetItemMode = itemMode;
+                    targetItemIsBilinear = itemIsBilinear;
                     preloadLogQueue.push(` -> Selected for Preload (Target Ratio: ${checkRatio})`);
                     break;
                 }
@@ -2996,6 +3064,8 @@ async function processNextPreload() {
 
     const idx = targetIndex;
     const origUrl = getFileUrl(idx);
+    actualMode = targetItemMode;
+    isBilinear = targetItemIsBilinear;
 
     if (isBilinear) {
         const cacheKey = origUrl + '_' + actualMode + '_1';
@@ -3034,6 +3104,7 @@ async function processNextPreload() {
 
         if (actualMode === 'ADPTV_SHOGA') {
             let displayW = window.innerWidth * currentZoom;
+            let displayH = window.innerHeight * currentZoom;
             if (getCurrentLayoutMode() === 'SPREAD' && getSpreadGroup(idx).length === 2) displayW *= 0.5;
             let dRatio = displayW / nw;
             currentRatio = Math.ceil(dRatio * 10) / 10;
@@ -3044,7 +3115,15 @@ async function processNextPreload() {
                 currentRatio = Math.max(1.0, currentRatio - 0.1);
             }
             currentRatio = Math.round(currentRatio * 10) / 10;
-            originalTargetRatio = currentRatio;
+
+            if (currentRatio < 1.0 && (nw >= displayW * 2 || nh >= displayH * 2)) {
+                actualMode = 'BILINEAR';
+                isBilinear = true;
+                currentRatio = 1.0;
+                originalTargetRatio = 1.0;
+            } else {
+                originalTargetRatio = currentRatio;
+            }
         } else {
             if (originalTargetRatio === 4.0 && (nw * 4.0 > 16384 || nh * 4.0 > 16384)) {
                 currentRatio = 2.0;
@@ -3096,7 +3175,7 @@ async function processNextPreload() {
                                 let bypassSuperSampling = ratio <= bypassThreshold;
 
                                 if (actualMode === 'ADPTV_SHOGA' && !bypassSuperSampling) {
-                                    renderRatio = Math.max(1.5, ratio);
+                                    renderRatio = ratio < 1.0 ? 1.0 : Math.max(1.5, ratio);
                                     const maxArea = getDynamicMaxArea();
                                     while ((inW * renderRatio * inH * renderRatio > maxArea || inW * renderRatio > 16384 || inH * renderRatio > 16384) && renderRatio > ratio) {
                                         renderRatio = Math.max(ratio, renderRatio - 0.1);
@@ -3472,6 +3551,7 @@ function applyUpscaleOverlays() {
 
         if (actualMode === 'ADPTV_SHOGA') {
             let displayW = window.innerWidth * currentZoom;
+            let displayH = window.innerHeight * currentZoom;
             if (getCurrentLayoutMode() === 'SPREAD' && getSpreadGroup(fIdx).length === 2) displayW *= 0.5;
             let dynamicRatio = displayW / nw;
             targetRatio = Math.ceil(dynamicRatio * 10) / 10;
@@ -3482,7 +3562,15 @@ function applyUpscaleOverlays() {
                 targetRatio = Math.max(1.0, targetRatio - 0.1);
             }
             targetRatio = Math.round(targetRatio * 10) / 10;
-            originalTargetRatio = targetRatio;
+
+            if (targetRatio < 1.0 && (nw >= displayW * 2 || nh >= displayH * 2)) {
+                actualMode = 'BILINEAR';
+                isBilinear = true;
+                targetRatio = 1.0;
+                originalTargetRatio = 1.0;
+            } else {
+                originalTargetRatio = targetRatio;
+            }
         } else {
             if (targetRatio === 4.0 && (nw * 4.0 > 16384 || nh * 4.0 > 16384)) {
                 targetRatio = 2.0;
@@ -3604,7 +3692,7 @@ function applyUpscaleOverlays() {
                                         let bypassSuperSampling = ratio <= bypassThreshold;
 
                                         if (actualMode === 'ADPTV_SHOGA' && !bypassSuperSampling) {
-                                            renderRatio = Math.max(1.5, ratio);
+                                            renderRatio = ratio < 1.0 ? 1.0 : Math.max(1.5, ratio);
                                             const maxArea = getDynamicMaxArea();
                                             while ((inW * renderRatio * inH * renderRatio > maxArea || inW * renderRatio > 16384 || inH * renderRatio > 16384) && renderRatio > ratio) {
                                                 renderRatio = Math.max(ratio, renderRatio - 0.1);
@@ -3832,6 +3920,10 @@ function processFileList(fileList, title) {
     upscaleCache.forEach(url => { if (url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
     upscaleCache.clear();
 
+    lightweightPreloadQueue = [];
+    activeLightweightIndex = -1;
+    isLightweightPreloading = false;
+
     files = fileList.sort(fileSortFn);
 
     currentIndex = 0;
@@ -4055,6 +4147,10 @@ function switchToGrid() {
                 upscaleCache.forEach(url => { if (url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
                 upscaleCache.clear();
 
+                lightweightPreloadQueue = [];
+                activeLightweightIndex = -1;
+                isLightweightPreloading = false;
+
                 isGridRendered = false;
                 switchToGrid();
             });
@@ -4148,6 +4244,7 @@ dom.gridArea.addEventListener('click', (e) => {
     const item = e.target.closest('.grid-item');
     if (item) {
         currentIndex = parseInt(item.dataset.index, 10);
+        lightweightPreloadQueue = [];
         switchToViewer();
     }
 });
@@ -4505,6 +4602,10 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
 
     if (needsRebuild) {
         Array.from(slot.children).forEach(child => {
+            if (child._fetchAbortController) {
+                child._fetchAbortController.abort();
+                delete child._fetchAbortController;
+            }
             if (child.hlsInstance) {
                 child.hlsInstance.destroy();
                 delete child.hlsInstance;
@@ -4859,7 +4960,11 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                                 }, 1000);
 
                                 try {
-                                    const response = await fetch(url);
+                                    if (img._fetchAbortController) {
+                                        img._fetchAbortController.abort();
+                                    }
+                                    img._fetchAbortController = new AbortController();
+                                    const response = await fetch(url, { signal: img._fetchAbortController.signal });
                                     const reader = response.body.getReader();
                                     const chunks = [];
                                     while (true) {
@@ -4877,8 +4982,13 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                                     finalUrlToSet = URL.createObjectURL(blob);
                                     if (!dom.infoPanel.classList.contains('hidden')) updateInfoPanel();
                                     img.dataset.jellyfinBlobUrl = finalUrlToSet;
+                                    delete img._fetchAbortController;
                                 } catch (e) {
                                     fetchResolved = true;
+                                    if (e.name === 'AbortError') {
+                                        imgResolve();
+                                        return;
+                                    }
                                 }
                             }
 
@@ -4907,6 +5017,10 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
             const url = getFileUrl(idx);
             const mediaEl = currentItems[i];
             if (mediaEl.dataset.originalUrl !== url || (mediaEl.tagName.toLowerCase() === 'video' && !mediaEl.hasAttribute('src'))) {
+                if (mediaEl._fetchAbortController) {
+                    mediaEl._fetchAbortController.abort();
+                    delete mediaEl._fetchAbortController;
+                }
                 if (mediaEl.dataset.jellyfinBlobUrl) {
                     URL.revokeObjectURL(mediaEl.dataset.jellyfinBlobUrl);
                     delete mediaEl.dataset.jellyfinBlobUrl;
@@ -5062,10 +5176,12 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
 
                     networkTasks.push({
                         idx, isPlaceholder: false, execute: async () => {
+                            let itemMode = actualMode;
                             let isAnim = await checkAnimated(files[idx]);
                             let checkRatio = originalTargetRatio;
-                            if (actualMode === 'ADPTV_SHOGA' && files[idx] && files[idx].nw) {
+                            if (itemMode === 'ADPTV_SHOGA' && files[idx] && files[idx].nw) {
                                 let displayW = window.innerWidth * currentZoom;
+                                let displayH = window.innerHeight * currentZoom;
                                 if (getCurrentLayoutMode() === 'SPREAD' && getSpreadGroup(idx).length === 2) displayW *= 0.5;
                                 let dRatio = displayW / files[idx].nw;
                                 checkRatio = Math.ceil(dRatio * 10) / 10;
@@ -5075,18 +5191,23 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                                     checkRatio = Math.max(1.0, checkRatio - 0.1);
                                 }
                                 checkRatio = Math.round(checkRatio * 10) / 10;
+
+                                if (checkRatio < 1.0 && (files[idx].nw >= displayW * 2 || files[idx].nh >= displayH * 2)) {
+                                    itemMode = 'BILINEAR';
+                                    checkRatio = 1.0;
+                                }
                             } else if (originalTargetRatio === 4.0 && files[idx] && files[idx].nw) {
                                 if (files[idx].nw * 4.0 > 16384 || files[idx].nh * 4.0 > 16384) {
                                     checkRatio = 2.0;
                                 }
                             }
 
-                            let cacheKey = url + '_' + actualMode + '_' + checkRatio;
+                            let cacheKey = url + '_' + itemMode + '_' + checkRatio;
                             let cachedUrl = upscaleCache.get(cacheKey);
                             let bestCachedRatio = -1;
 
                             for (let [key, cacheVal] of upscaleCache.entries()) {
-                                if (key.startsWith(url + '_' + actualMode + '_')) {
+                                if (key.startsWith(url + '_' + itemMode + '_')) {
                                     let cachedRatio = parseFloat(key.split('_').pop());
                                     if (!isNaN(cachedRatio) && cachedRatio >= checkRatio) {
                                         if (cacheVal !== 'error' && cacheVal !== 'skipped' && cacheVal !== 'processing') {
@@ -5213,7 +5334,11 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                                     }, 1000);
 
                                     try {
-                                        const response = await fetch(url);
+                                        if (img._fetchAbortController) {
+                                            img._fetchAbortController.abort();
+                                        }
+                                        img._fetchAbortController = new AbortController();
+                                        const response = await fetch(url, { signal: img._fetchAbortController.signal });
                                         const reader = response.body.getReader();
                                         const chunks = [];
                                         while (true) {
@@ -5231,8 +5356,13 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                                         finalUrlToSet = URL.createObjectURL(blob);
                                         if (!dom.infoPanel.classList.contains('hidden')) updateInfoPanel();
                                         img.dataset.jellyfinBlobUrl = finalUrlToSet;
+                                        delete img._fetchAbortController;
                                     } catch (e) {
                                         fetchResolved = true;
+                                        if (e.name === 'AbortError') {
+                                            imgResolve();
+                                            return;
+                                        }
                                     }
                                 }
 
@@ -5353,10 +5483,10 @@ function renderViewer() {
         indices.forEach((idx, i) => {
             const file = files[idx];
             if (!file || file.isBroken) return;
-            
+
             const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(file.name);
             const isGif = file.type === 'image/gif' || /\.gif$/i.test(file.name);
-            
+
             if (!isVideo && !isGif) return;
 
             let placeholderSrc = null;
@@ -5370,13 +5500,13 @@ function renderViewer() {
             if (placeholderSrc) {
                 const placeholder = document.createElement('img');
                 placeholder.src = placeholderSrc;
-                
+
                 let className = 'shoga-placeholder';
                 if (mode === 'SPREAD' && indices.length === 2) {
                     className += i === 0 ? ' spread-left' : ' spread-right';
                 }
                 placeholder.className = className;
-                
+
                 let customCss = 'position:absolute; z-index:-1; filter:blur(10px); opacity:0.5; pointer-events:none; ';
 
                 if (mode === 'SPREAD' && indices.length === 2) {
@@ -5483,7 +5613,7 @@ function cleanCaches() {
         }
     }
     for (const [idx, url] of urlCache.entries()) {
-        if (Math.abs(idx - currentIndex) > 16) {
+        if (Math.abs(idx - currentIndex) > 32 && !lightweightPreloadQueue.includes(idx) && idx !== activeLightweightIndex) {
             if (url.startsWith('blob:')) { URL.revokeObjectURL(url); revokedUrls++; }
             urlCache.delete(idx);
         }
