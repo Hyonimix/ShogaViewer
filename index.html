@@ -100,10 +100,25 @@ body[data-view-mode="VIEWER"].ui-hidden #btn-mobile-back { opacity: 0; pointer-e
     flex-direction: column;
     gap: 15px;
     min-width: 300px;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
     opacity: 1;
     visibility: visible;
     transition: opacity 0.2s, visibility 0.2s, transform 0.2s;
     border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.panel > * {
+    flex-shrink: 0;
+}
+
+.panel::-webkit-scrollbar {
+    width: 4px;
+}
+
+.panel::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
 }
 
 .panel.hidden {
@@ -212,10 +227,25 @@ button:focus-visible, input:focus-visible {
     flex-direction: column;
     gap: 8px;
     min-width: 220px;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.2s, visibility 0.2s, transform 0.2s;
     border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dropdown-menu > * {
+    flex-shrink: 0;
+}
+
+.dropdown-menu::-webkit-scrollbar {
+    width: 4px;
+}
+
+.dropdown-menu::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
 }
 
 .dropdown-menu.active {
@@ -736,6 +766,8 @@ body.animating #viewer-content { transition: transform 0.25s ease-out; }
     padding: 25px;
     width: 90%;
     max-width: 340px;
+    max-height: 90vh;
+    overflow-y: auto;
     transform: scale(0.9);
     transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
     box-shadow: 0 20px 50px var(--shadow-dark);
@@ -743,6 +775,20 @@ body.animating #viewer-content { transition: transform 0.25s ease-out; }
     flex-direction: column;
     gap: 15px;
 }
+
+.modal-content > * {
+    flex-shrink: 0;
+}
+
+.modal-content::-webkit-scrollbar {
+    width: 4px;
+}
+
+.modal-content::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
+}
+
 .modal-overlay.active .modal-content {
     transform: scale(1);
 }
@@ -919,6 +965,56 @@ body.animating #viewer-content { transition: transform 0.25s ease-out; }
             .attribution-link {
                 bottom: 100px;
             }
+
+
+@media (orientation: landscape) and (max-height: 520px) {
+            #top-bar {
+                top: 10px;
+                left: 10px;
+                right: 10px;
+                transform: none;
+                width: auto;
+                min-width: 0;
+                height: 44px;
+                padding: 0 10px;
+                gap: 6px;
+                border-radius: 14px;
+                justify-content: space-between;
+                overflow-x: auto;
+                overflow-y: hidden;
+                -webkit-overflow-scrolling: touch;
+            }
+            body[data-view-mode="VIEWER"].ui-hidden #top-bar {
+                transform: translateY(-70px);
+            }
+            #top-bar::-webkit-scrollbar { display: none; }
+            #btn-mobile-back {
+                top: 12px;
+                left: 12px;
+            }
+            .panel {
+                top: 60px;
+                bottom: 10px;
+                width: calc(100% - 20px);
+                min-width: 0;
+                max-height: none;
+                padding: 12px;
+                border-radius: 10px;
+            }
+            .dropdown-menu {
+                top: calc(100% + 8px);
+                max-height: calc(100vh - 72px);
+                width: min(280px, calc(100vw - 20px));
+            }
+            #bookmarks-panel {
+                width: min(300px, 85vw);
+                right: calc(-1 * min(300px, 85vw));
+            }
+            #grid-area {
+                padding: 64px 12px 12px 12px !important;
+            }
+        }
+
         }
 </style>
 </head>
@@ -1283,6 +1379,23 @@ body.animating #viewer-content { transition: transform 0.25s ease-out; }
     <div id="loading-progress" style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 8px;"></div>
 </div>
 
+<div id="network-offline-banner" style="position: fixed; top: 16px; right: 16px; z-index: 4000; display: none; align-items: center; gap: 8px; background: rgba(239,68,68,0.18); color: #fecaca; border: 1px solid rgba(239,68,68,0.45); border-radius: 12px; padding: 8px 12px; backdrop-filter: blur(8px); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.4px;">
+    OFFLINE · REMOTE STREAMING LIMITED
+</div>
+
+<div id="perf-hud" style="position: fixed; bottom: 20px; right: 20px; z-index: 3500; display: none; flex-direction: column; gap: 4px; min-width: 124px; background: rgba(20,20,20,0.6); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 8px 10px; color: var(--text-secondary); font-size: 0.7rem; backdrop-filter: blur(6px); pointer-events: none;">
+    <div style="display: flex; justify-content: space-between;"><span>FPS</span><span id="perf-fps">0</span></div>
+    <div style="display: flex; justify-content: space-between;"><span>MEM</span><span id="perf-mem">n/a</span></div>
+</div>
+
+<script src="src/bootstrap/runtime-bridge.legacy.js"></script>
+<script src="src/bootstrap/app-adapters.legacy.js"></script>
+<script src="src/bootstrap/app-runtime-tools.legacy.js"></script>
+<script src="src/bootstrap/app-context.legacy.js"></script>
+<script src="src/bootstrap/app-file-logic.legacy.js"></script>
+<script src="src/bootstrap/app-task-queue.legacy.js"></script>
 <script src="app.js"></script>
+<script type="module" src="src/bootstrap/runtime-bridge.js"></script>
+<script type="module" src="src/bootstrap/enhancements.js"></script>
 </body>
 </html>

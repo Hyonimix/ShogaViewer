@@ -66,6 +66,21 @@ function getDynamicMaxArea() {
     return 16777216;
 }
 
+const appContext = (typeof window !== 'undefined' && window.ShogaAppContext) ? window.ShogaAppContext : null;
+const MEDIA_VIDEO_EXT_RE = appContext ? appContext.MEDIA_VIDEO_EXT_RE : /\.(mp4|webm|mkv|mov|m4v|avi)$/i;
+const isSupportedMediaName = appContext ? appContext.isSupportedMediaName : (name) => /\.(mp4|webm|mkv|mov|m4v|avi|jpg|jpeg|png|gif|webp|avif|bmp|ico)$/i.test(name || '');
+const isVideoFileLike = appContext ? appContext.isVideoFileLike : (file) => !!file && ((file.type || '').startsWith('video/') || MEDIA_VIDEO_EXT_RE.test(file.name || ''));
+const isSupportedMediaFile = appContext
+    ? appContext.isSupportedMediaFile
+    : (file) => !!file && (((file.type || '').startsWith('image/')) || isVideoFileLike(file) || isSupportedMediaName(file.name || ''));
+const NATURAL_COLLATOR = new Intl.Collator(undefined, { numeric: true });
+const compareByNameAsc = appContext && appContext.compareByNameAsc ? appContext.compareByNameAsc : ((a, b) => NATURAL_COLLATOR.compare(a.name, b.name));
+const compareByNameDesc = appContext && appContext.compareByNameDesc ? appContext.compareByNameDesc : ((a, b) => NATURAL_COLLATOR.compare(b.name, a.name));
+const fileLogicFactory = (typeof window !== 'undefined' && window.ShogaFileLogicFactory) ? window.ShogaFileLogicFactory : null;
+const fileLogic = fileLogicFactory && fileLogicFactory.createFileLogic
+    ? fileLogicFactory.createFileLogic({ isVideoFileLike, compareByNameAsc, compareByNameDesc, compareMediaAware: appContext && appContext.compareMediaAware ? appContext.compareMediaAware : null })
+    : null;
+
 let files = [];
 let currentFolders = [];
 let dirStack = [];
@@ -73,12 +88,12 @@ let currentIndex = 0;
 let imageLayoutMode = localStorage.getItem('shoga-image-layout') || 'SINGLE';
 let videoLayoutMode = localStorage.getItem('shoga-video-layout') || 'SINGLE';
 
-function isVideoFile(file) {
-    if (!file) return false;
-    return file.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(file.name);
-}
+const isVideoFile = fileLogic && fileLogic.isVideoFile ? fileLogic.isVideoFile : ((file) => isVideoFileLike(file));
 
 function getCurrentLayoutMode() {
+    if (fileLogic && fileLogic.resolveLayoutMode) {
+        return fileLogic.resolveLayoutMode(files, currentIndex, imageLayoutMode, videoLayoutMode);
+    }
     if (files.length === 0 || currentIndex < 0 || currentIndex >= files.length) return imageLayoutMode;
     return isVideoFile(files[currentIndex]) ? videoLayoutMode : imageLayoutMode;
 }
@@ -90,15 +105,16 @@ let viewMode = 'IDLE';
 
 let folderSortMode = 'name-asc';
 let fileSortMode = 'name-asc';
-const fileSortFn = (a, b) => {
-    const aIsVideo = isVideoFile(a);
-    const bIsVideo = isVideoFile(b);
-    if (aIsVideo && !bIsVideo) return -1;
-    if (!aIsVideo && bIsVideo) return 1;
-
-    if (fileSortMode === 'name-asc') return a.name.localeCompare(b.name, undefined, { numeric: true });
-    return b.name.localeCompare(a.name, undefined, { numeric: true });
-};
+const fileSortFn = fileLogic && fileLogic.buildFileSortFn
+    ? fileLogic.buildFileSortFn(() => fileSortMode)
+    : ((a, b) => {
+        const aIsVideo = isVideoFile(a);
+        const bIsVideo = isVideoFile(b);
+        if (aIsVideo && !bIsVideo) return -1;
+        if (!aIsVideo && bIsVideo) return 1;
+        if (fileSortMode === 'name-asc') return compareByNameAsc(a, b);
+        return compareByNameDesc(a, b);
+    });
 
 let folderFilterText = '';
 let fileFilterText = '';
@@ -121,6 +137,26 @@ let isPreloading = false;
 let lightweightPreloadQueue = [];
 let isLightweightPreloading = false;
 let activeLightweightIndex = -1;
+const PRELOAD_DELAY_SHORT = 50;
+const PRELOAD_DELAY_DEFER = 200;
+function resetLightweightPreloadState() {
+    lightweightPreloadQueue = [];
+    activeLightweightIndex = -1;
+}
+function schedulePreloadNext(delayMs) {
+    preloadQueueTimer = setTimeout(processNextPreload, delayMs);
+}
+function shouldDeferPreloadWork() {
+    if (runtimeTools && runtimeTools.shouldDeferPreload) {
+        return runtimeTools.shouldDeferPreload(
+            isPanning,
+            isDragging,
+            dom.body.classList.contains('animating'),
+            upscaleTasks
+        );
+    }
+    return isPanning || isDragging || dom.body.classList.contains('animating') || upscaleTasks > 0;
+}
 
 let isSingleFileMode = false;
 let pendingBookmarkRestoreId = null;
@@ -131,6 +167,62 @@ const isHighMemMode = (navigator.deviceMemory || 8) >= 16;
 const maxZoomLimit = 25;
 
 let isLowEndHardware = false;
+const runtimeTools = (typeof window !== 'undefined' && window.ShogaRuntimeTools) ? window.ShogaRuntimeTools : null;
+const lowSpecRuntime = runtimeTools && runtimeTools.createLowSpecRuntimeState
+    ? runtimeTools.createLowSpecRuntimeState()
+    : { videoEl: null, imageEl: null, queuePumpScheduled: false, rafTaskQueued: false, reusableCanvases: [] };
+const getCanvas2DContext = runtimeTools && runtimeTools.getCanvas2DContext
+    ? runtimeTools.getCanvas2DContext
+    : function getCanvas2DContextFallback(canvas) {
+        if (!canvas) return null;
+        if (!canvas._ctx2d) canvas._ctx2d = canvas.getContext('2d', { alpha: false });
+        return canvas._ctx2d;
+    };
+const scheduleFrameTask = runtimeTools && runtimeTools.scheduleFrameTask
+    ? (task) => runtimeTools.scheduleFrameTask(lowSpecRuntime, task)
+    : function scheduleFrameTaskFallback(task) {
+        if (lowSpecRuntime.rafTaskQueued) return;
+        lowSpecRuntime.rafTaskQueued = true;
+        requestAnimationFrame(() => {
+            lowSpecRuntime.rafTaskQueued = false;
+            task();
+        });
+    };
+const getReusableCanvas = runtimeTools && runtimeTools.getReusableCanvas
+    ? () => runtimeTools.getReusableCanvas(lowSpecRuntime)
+    : function getReusableCanvasFallback() {
+        return lowSpecRuntime.reusableCanvases.pop() || document.createElement('canvas');
+    };
+const releaseReusableCanvas = runtimeTools && runtimeTools.releaseReusableCanvas
+    ? (canvas) => runtimeTools.releaseReusableCanvas(lowSpecRuntime, canvas, isLowEndHardware)
+    : function releaseReusableCanvasFallback(canvas) {
+        if (!canvas) return;
+        canvas.width = 0;
+        canvas.height = 0;
+        if (lowSpecRuntime.reusableCanvases.length < (isLowEndHardware ? 8 : 16)) {
+            lowSpecRuntime.reusableCanvases.push(canvas);
+        }
+    };
+
+function scheduleLightweightQueuePump() {
+    if (runtimeTools && runtimeTools.scheduleLightweightQueuePump) {
+        runtimeTools.scheduleLightweightQueuePump(lowSpecRuntime, isLowEndHardware, scheduleFrameTask, processLightweightQueue);
+        return;
+    }
+    if (lowSpecRuntime.queuePumpScheduled) return;
+    lowSpecRuntime.queuePumpScheduled = true;
+    if (isLowEndHardware) {
+        requestAnimationFrame(() => {
+            lowSpecRuntime.queuePumpScheduled = false;
+            processLightweightQueue();
+        });
+    } else {
+        scheduleFrameTask(() => {
+            lowSpecRuntime.queuePumpScheduled = false;
+            processLightweightQueue();
+        });
+    }
+}
 
 async function initializeHardwareDetection() {
     const mem = navigator.deviceMemory || 8;
@@ -242,19 +334,44 @@ let currentAnimationId = null;
 let bounceBackTimer = null;
 
 const urlCache = new Map();
+function setCachedUrl(index, url) {
+    const prev = urlCache.get(index);
+    if (prev && prev !== url && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+    urlCache.set(index, url);
+}
+function deleteCachedUrl(index) {
+    const prev = urlCache.get(index);
+    if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+    urlCache.delete(index);
+}
+function clearCachedUrls() {
+    for (const url of urlCache.values()) {
+        if (url && url.startsWith('blob:')) URL.revokeObjectURL(url);
+    }
+    urlCache.clear();
+}
 
 const DB_NAME = 'ShogaViewerDB';
 const STORE_HANDLES = 'FileSystemHandles';
 const STORE_BOOKMARKS = 'Bookmarks';
 
 let upscaleTasks = 0;
-let taskQueue = [];
-let isTaskProcessing = false;
+const upscaleIndicatorController = runtimeTools && runtimeTools.createUpscaleIndicatorController
+    ? runtimeTools.createUpscaleIndicatorController({
+        indicatorEl: document.getElementById('upscale-indicator'),
+        saveBtn: document.getElementById('btn-save'),
+        onCountChange: (count) => { upscaleTasks = count; }
+    })
+    : null;
+const taskQueueFactory = (typeof window !== 'undefined' && window.ShogaTaskQueueFactory) ? window.ShogaTaskQueueFactory : null;
+const taskQueueAdapter = taskQueueFactory && taskQueueFactory.createAsyncTaskQueue
+    ? taskQueueFactory.createAsyncTaskQueue({ onError: (e) => console.error('Task failed', e) })
+    : null;
 
 async function checkAnimated(file) {
     if (!file) return false;
     if (file.isJellyfin) return false;
-    if (file.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(file.name)) return true;
+    if (isVideoFile(file)) return true;
     if (file.isAnimated !== undefined) return file.isAnimated;
     if (file.type !== 'image/webp' && file.type !== 'image/gif') {
         file.isAnimated = false;
@@ -291,50 +408,51 @@ async function checkAnimated(file) {
     return file.isAnimated;
 }
 
-async function processTaskQueue() {
-    if (isTaskProcessing) return;
-    isTaskProcessing = true;
-    while (taskQueue.length > 0) {
-        const task = taskQueue.shift();
-        if (task.isValid()) {
+function enqueueTask(isValid, run, onCancel) {
+    if (taskQueueAdapter) {
+        taskQueueAdapter.enqueue(isValid, run, onCancel);
+        return;
+    }
+    Promise.resolve().then(async () => {
+        if (isValid()) {
             try {
-                await task.run();
+                await run();
             } catch (e) {
                 console.error('Task failed', e);
             }
-        } else {
-            if (task.onCancel) task.onCancel();
+        } else if (onCancel) {
+            onCancel();
         }
-    }
-    isTaskProcessing = false;
-}
-
-function enqueueTask(isValid, run, onCancel) {
-    taskQueue.push({ isValid, run, onCancel });
-    processTaskQueue();
+    });
 }
 
 let ffmpegInstance = null;
 let isTranscoding = false;
 let transcodeAbortController = null;
+const scriptLoader = runtimeTools && runtimeTools.createScriptLoader ? runtimeTools.createScriptLoader() : null;
 
 async function loadFFmpeg() {
     if (ffmpegInstance) return ffmpegInstance;
     if (!window.FFmpeg) {
-        await new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = './unpkg/ffmpeg.js';
-            script.onload = resolve;
-            script.onerror = reject;
-            document.head.appendChild(script);
-        });
-        await new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = './unpkg/index.js';
-            script.onload = resolve;
-            script.onerror = reject;
-            document.head.appendChild(script);
-        });
+        if (scriptLoader) {
+            await scriptLoader.loadScript('./unpkg/ffmpeg.js');
+            await scriptLoader.loadScript('./unpkg/index.js');
+        } else {
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = './unpkg/ffmpeg.js';
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = './unpkg/index.js';
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
     }
     const { FFmpeg } = window.FFmpeg;
     ffmpegInstance = new FFmpeg();
@@ -477,9 +595,7 @@ async function handleVideoTranscode(file, idx, videoEl) {
         const blob = new Blob([data.buffer], { type: 'video/mp4' });
         const newUrl = URL.createObjectURL(blob);
 
-        const oldUrl = urlCache.get(idx);
-        if (oldUrl) URL.revokeObjectURL(oldUrl);
-        urlCache.set(idx, newUrl);
+        setCachedUrl(idx, newUrl);
 
         files[idx] = new File([blob], file.name + '.mp4', { type: 'video/mp4' });
 
@@ -497,11 +613,19 @@ async function handleVideoTranscode(file, idx, videoEl) {
 }
 
 function showUpscaleIndicator() {
+    if (upscaleIndicatorController) {
+        upscaleIndicatorController.show();
+        return;
+    }
     upscaleTasks++;
     document.getElementById('upscale-indicator').style.display = 'flex';
     document.getElementById('btn-save').disabled = true;
 }
 function hideUpscaleIndicator() {
+    if (upscaleIndicatorController) {
+        upscaleIndicatorController.hide();
+        return;
+    }
     upscaleTasks = Math.max(0, upscaleTasks - 1);
     if (upscaleTasks === 0) {
         document.getElementById('upscale-indicator').style.display = 'none';
@@ -510,6 +634,16 @@ function hideUpscaleIndicator() {
 }
 
 function showLoading(title = 'PROCESSING', text = '') {
+    if (!showLoading._controller && runtimeTools && runtimeTools.createLoadingController) {
+        showLoading._controller = runtimeTools.createLoadingController({
+            overlay: document.getElementById('loading-overlay'),
+            progressElement: dom.loadingProgress,
+        });
+    }
+    if (showLoading._controller) {
+        showLoading._controller.show(title, text);
+        return;
+    }
     const overlay = document.getElementById('loading-overlay');
     const titleEl = overlay.querySelector('div:nth-child(2)');
     if (titleEl) titleEl.textContent = title;
@@ -517,9 +651,17 @@ function showLoading(title = 'PROCESSING', text = '') {
     overlay.style.display = 'flex';
 }
 function updateLoading(text) {
+    if (showLoading._controller) {
+        showLoading._controller.update(text);
+        return;
+    }
     if (dom.loadingProgress) dom.loadingProgress.textContent = text;
 }
 function hideLoading() {
+    if (showLoading._controller) {
+        showLoading._controller.hide();
+        return;
+    }
     if (dom.loadingProgress) dom.loadingProgress.textContent = '';
     document.getElementById('loading-overlay').style.display = 'none';
 }
@@ -904,7 +1046,7 @@ const lazyThumbnailObserver = new IntersectionObserver((entries) => {
 async function processLightweightQueue() {
     if (isLightweightPreloading || lightweightPreloadQueue.length === 0) return;
     if (viewMode !== 'GRID') {
-        lightweightPreloadQueue = [];
+        resetLightweightPreloadState();
         return;
     }
     isLightweightPreloading = true;
@@ -913,7 +1055,7 @@ async function processLightweightQueue() {
 
     try {
         const file = files[idx];
-        if (file && !file.isBroken && !file.isJellyfin && !file.type.startsWith('video/')) {
+        if (file && !file.isBroken && !file.isJellyfin && !isVideoFileLike(file)) {
             const url = getFileUrl(idx);
             const img = new Image();
             img.src = url;
@@ -924,7 +1066,7 @@ async function processLightweightQueue() {
     activeLightweightIndex = -1;
     isLightweightPreloading = false;
     if (lightweightPreloadQueue.length > 0) {
-        setTimeout(processLightweightQueue, 50);
+        scheduleLightweightQueuePump();
     }
 }
 
@@ -937,10 +1079,10 @@ async function generateHighPerfThumbnail(file, canvas) {
         img.onload = () => {
             canvas.width = THUMB_SIZE;
             canvas.height = THUMB_SIZE * (img.height / img.width);
-            const ctx = canvas.getContext('2d', { alpha: false });
+            const ctx = getCanvas2DContext(canvas);
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-            if (file.type.startsWith('video/')) {
+            if (isVideoFileLike(file)) {
                 ctx.fillStyle = 'rgba(0,0,0,0.5)';
                 ctx.beginPath();
                 ctx.arc(canvas.width / 2, canvas.height / 2, 20, 0, Math.PI * 2);
@@ -959,7 +1101,7 @@ async function generateHighPerfThumbnail(file, canvas) {
             file.isBroken = true;
             canvas.width = THUMB_SIZE;
             canvas.height = THUMB_SIZE;
-            const ctx = canvas.getContext('2d', { alpha: false });
+            const ctx = getCanvas2DContext(canvas);
             ctx.fillStyle = '#1e1e1e';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.strokeStyle = '#ef4444';
@@ -972,8 +1114,12 @@ async function generateHighPerfThumbnail(file, canvas) {
         };
         return;
     }
-    if (file.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(file.name)) {
-        const video = document.createElement('video');
+    if (isVideoFileLike(file)) {
+        const video = (isLowEndHardware && lowSpecRuntime.videoEl) ? lowSpecRuntime.videoEl : document.createElement('video');
+        if (isLowEndHardware && !lowSpecRuntime.videoEl) lowSpecRuntime.videoEl = video;
+        video.onloadeddata = null;
+        video.onseeked = null;
+        video.onerror = null;
         video.src = URL.createObjectURL(file);
         video.muted = true;
         video.playsInline = true;
@@ -984,7 +1130,7 @@ async function generateHighPerfThumbnail(file, canvas) {
         video.onseeked = () => {
             canvas.width = THUMB_SIZE;
             canvas.height = THUMB_SIZE * (video.videoHeight / video.videoWidth);
-            const ctx = canvas.getContext('2d', { alpha: false });
+            const ctx = getCanvas2DContext(canvas);
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
             ctx.fillStyle = 'rgba(0,0,0,0.5)';
@@ -999,6 +1145,8 @@ async function generateHighPerfThumbnail(file, canvas) {
             ctx.fill();
 
             URL.revokeObjectURL(video.src);
+            video.removeAttribute('src');
+            video.load();
             canvas.classList.add('loaded');
         };
         video.onerror = (e) => {
@@ -1006,7 +1154,7 @@ async function generateHighPerfThumbnail(file, canvas) {
             file.isBroken = true;
             canvas.width = THUMB_SIZE;
             canvas.height = THUMB_SIZE;
-            const ctx = canvas.getContext('2d', { alpha: false });
+            const ctx = getCanvas2DContext(canvas);
             ctx.fillStyle = '#1e1e1e';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.strokeStyle = '#ef4444';
@@ -1016,6 +1164,8 @@ async function generateHighPerfThumbnail(file, canvas) {
             ctx.moveTo(canvas.width * 0.66, canvas.height * 0.33); ctx.lineTo(canvas.width * 0.33, canvas.height * 0.66);
             ctx.stroke();
             URL.revokeObjectURL(video.src);
+            video.removeAttribute('src');
+            video.load();
             canvas.classList.add('loaded');
         };
         return;
@@ -1024,12 +1174,15 @@ async function generateHighPerfThumbnail(file, canvas) {
         const bmp = await createImageBitmap(file, { resizeWidth: THUMB_SIZE, resizeQuality: 'low' });
         canvas.width = bmp.width;
         canvas.height = bmp.height;
-        const ctx = canvas.getContext('2d', { alpha: false });
+        const ctx = getCanvas2DContext(canvas);
         ctx.drawImage(bmp, 0, 0);
         bmp.close();
         canvas.classList.add('loaded');
     } catch (e) {
-        const img = new Image();
+        const img = (isLowEndHardware && lowSpecRuntime.imageEl) ? lowSpecRuntime.imageEl : new Image();
+        if (isLowEndHardware && !lowSpecRuntime.imageEl) lowSpecRuntime.imageEl = img;
+        img.onload = null;
+        img.onerror = null;
         img.src = URL.createObjectURL(file);
         img.onload = () => {
             if (img.naturalWidth === 0 || img.naturalHeight === 0) {
@@ -1038,7 +1191,7 @@ async function generateHighPerfThumbnail(file, canvas) {
             }
             canvas.width = THUMB_SIZE;
             canvas.height = THUMB_SIZE * (img.height / img.width);
-            const ctx = canvas.getContext('2d', { alpha: false });
+            const ctx = getCanvas2DContext(canvas);
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             URL.revokeObjectURL(img.src);
             canvas.classList.add('loaded');
@@ -1048,7 +1201,7 @@ async function generateHighPerfThumbnail(file, canvas) {
             file.isBroken = true;
             canvas.width = THUMB_SIZE;
             canvas.height = THUMB_SIZE;
-            const ctx = canvas.getContext('2d', { alpha: false });
+            const ctx = getCanvas2DContext(canvas);
             ctx.fillStyle = '#1e1e1e';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.strokeStyle = '#ef4444';
@@ -1073,7 +1226,7 @@ async function captureThumbnail() {
         const canvasL = document.querySelector(`.grid-item[data-index="${readDir === 'LTR' ? group[0] : group[1]}"] canvas.loaded`);
         const canvasR = document.querySelector(`.grid-item[data-index="${readDir === 'LTR' ? group[1] : group[0]}"] canvas.loaded`);
         if (canvasL && canvasR) {
-            const tempCanvas = document.createElement('canvas');
+            const tempCanvas = getReusableCanvas();
             tempCanvas.width = canvasL.width + canvasR.width;
             tempCanvas.height = Math.max(canvasL.height, canvasR.height);
             const ctx = tempCanvas.getContext('2d', { alpha: false });
@@ -1081,12 +1234,14 @@ async function captureThumbnail() {
             ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
             ctx.drawImage(canvasL, 0, (tempCanvas.height - canvasL.height) / 2);
             ctx.drawImage(canvasR, canvasL.width, (tempCanvas.height - canvasR.height) / 2);
-            return tempCanvas.toDataURL('image/jpeg', 0.8);
+            const out = tempCanvas.toDataURL('image/jpeg', 0.8);
+            releaseReusableCanvas(tempCanvas);
+            return out;
         }
     }
 
     const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = getCanvas2DContext(canvas);
 
     const THUMB_W = isLowEndHardware ? 200 : 400;
     const THUMB_W_HALF = isLowEndHardware ? 100 : 200;
@@ -1457,7 +1612,7 @@ async function restoreBookmark(id) {
                             try {
                                 if (/\.(txt|json|xml|html|css|js|md|csv|zip|rar|7z|mp3|wav)$/i.test(entry.name)) return null;
                                 const file = await entry.getFile();
-                                if (file.type.startsWith('image/') || file.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi|jpg|jpeg|png|gif|webp|avif|bmp|ico)$/i.test(file.name)) return file;
+                                if (isSupportedMediaFile(file)) return file;
                             } catch (err) { }
                             return null;
                         }));
@@ -1500,7 +1655,7 @@ async function restoreBookmark(id) {
                             try {
                                 if (/\.(txt|json|xml|html|css|js|md|csv|zip|rar|7z|mp3|wav)$/i.test(entry.name)) return null;
                                 const file = await entry.getFile();
-                                if (file.type.startsWith('image/') || file.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi|jpg|jpeg|png|gif|webp|avif|bmp|ico)$/i.test(file.name)) return file;
+                                if (isSupportedMediaFile(file)) return file;
                             } catch (err) { }
                             return null;
                         }));
@@ -1552,13 +1707,12 @@ async function restoreBookmark(id) {
     destroyAllHls();
 
     urlCache.forEach(url => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); });
-    urlCache.clear();
+    clearCachedUrls();
 
     upscaleCache.forEach(url => { if (url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
     upscaleCache.clear();
 
-    lightweightPreloadQueue = [];
-    activeLightweightIndex = -1;
+    resetLightweightPreloadState();
     isLightweightPreloading = false;
 
     files = restoredFiles;
@@ -1667,7 +1821,7 @@ function getFileUrl(index) {
     const file = files[index];
 
     if (file.isJellyfin) {
-        if (file.type.startsWith('video/')) {
+        if (isVideoFileLike(file)) {
             const mem = navigator.deviceMemory || 4;
             const cores = navigator.hardwareConcurrency || 4;
 
@@ -1816,13 +1970,12 @@ dom.btnHome.addEventListener('click', () => {
     currentIndex = 0;
 
     urlCache.forEach(url => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); });
-    urlCache.clear();
+    clearCachedUrls();
 
     upscaleCache.forEach(url => { if (url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
     upscaleCache.clear();
 
-    lightweightPreloadQueue = [];
-    activeLightweightIndex = -1;
+    resetLightweightPreloadState();
     isLightweightPreloading = false;
 
     currentTitle = 'Shoga Viewer';
@@ -1865,7 +2018,7 @@ async function processDirectoryHandle(handle, titleOverride = null) {
                 try {
                     if (/\.(txt|json|xml|html|css|js|md|csv|zip|rar|7z|mp3|wav)$/i.test(entry.name)) return null;
                     const file = await entry.getFile();
-                    if (file.type.startsWith('image/') || file.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi|jpg|jpeg|png|gif|webp|avif|bmp|ico)$/i.test(file.name)) return file;
+                    if (isSupportedMediaFile(file)) return file;
                 } catch (err) { }
                 return null;
             }));
@@ -2061,8 +2214,7 @@ async function loadJellyfinFolder(parentId = null, folderName = 'Jellyfin') {
         isGridRendered = false;
         isSingleFileMode = false;
 
-        lightweightPreloadQueue = [];
-        activeLightweightIndex = -1;
+        resetLightweightPreloadState();
         isLightweightPreloading = false;
 
         if (!parentId) {
@@ -2107,7 +2259,7 @@ const handleFileInput = (e) => {
         if (filesArr[0].webkitRelativePath) {
             title = filesArr[0].webkitRelativePath.split('/')[0] || title;
         }
-        processFileList(filesArr.filter(f => f.type.startsWith('image/') || f.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi|jpg|jpeg|png|gif|webp|avif|bmp|ico)$/i.test(f.name)), title);
+        processFileList(filesArr.filter(f => isSupportedMediaFile(f)), title);
         hideLoading();
     }
     e.target.value = '';
@@ -2456,7 +2608,7 @@ function renderFSR(img, canvas, cw, ch, texW, texH, sharpness = 2) {
         console.error('OOM or Context Lost in renderFSR'); throw new Error('OOM');
     }
 
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = getCanvas2DContext(canvas);
     ctx.drawImage(gl.canvas, 0, 0, cw, ch);
 
     gl.deleteTexture(texture);
@@ -2555,7 +2707,7 @@ function renderAntiJaggies(img, canvas, cw, ch, texW, texH) {
         console.error('OOM or Context Lost in renderAntiJaggies'); throw new Error('OOM');
     }
 
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = getCanvas2DContext(canvas);
     ctx.drawImage(gl.canvas, 0, 0, cw, ch);
 
     gl.deleteTexture(texture);
@@ -2688,7 +2840,7 @@ function renderAdptvShogaPlus(img, canvas, cw, ch, texW, texH, scale) {
         console.error('OOM or Context Lost in renderAdptvShogaPlus'); throw new Error('OOM');
     }
 
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = getCanvas2DContext(canvas);
     ctx.drawImage(gl.canvas, 0, 0, cw, ch);
 
     gl.deleteTexture(texture);
@@ -2745,7 +2897,7 @@ function renderAnime4KLite(img, canvas, cw, ch, texW, texH) {
         console.error('OOM or Context Lost in renderAnime4KLite'); throw new Error('OOM');
     }
 
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = getCanvas2DContext(canvas);
     ctx.drawImage(gl.canvas, 0, 0, cw, ch);
 
     gl.deleteTexture(texture);
@@ -2813,7 +2965,7 @@ function renderXBRZLite(img, canvas, cw, ch, texW, texH) {
         console.error('OOM or Context Lost in renderXBRZLite'); throw new Error('OOM');
     }
 
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = getCanvas2DContext(canvas);
     ctx.drawImage(gl.canvas, 0, 0, cw, ch);
 
     gl.deleteTexture(texture);
@@ -2962,8 +3114,8 @@ async function processNextPreload() {
         isPreloading = false;
         return;
     }
-    if (isPanning || isDragging || dom.body.classList.contains('animating') || upscaleTasks > 0) {
-        preloadQueueTimer = setTimeout(processNextPreload, 200);
+    if (shouldDeferPreloadWork()) {
+        schedulePreloadNext(PRELOAD_DELAY_DEFER);
         return;
     }
 
@@ -2986,7 +3138,7 @@ async function processNextPreload() {
 
                 let isAnim = await checkAnimated(files[idx]);
                 preloadLogQueue.push(`[Index ${idx}] Type: ${files[idx]?.type}, isAnim: ${isAnim}`);
-                if (isAnim || files[idx].type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(files[idx].name)) {
+                if (isAnim || isVideoFileLike(files[idx])) {
                     preloadLogQueue.push(` -> Skipped (Anim/Video)`);
                     continue;
                 }
@@ -3070,26 +3222,26 @@ async function processNextPreload() {
     if (isBilinear) {
         const cacheKey = origUrl + '_' + actualMode + '_1';
         upscaleCache.set(cacheKey, origUrl);
-        preloadQueueTimer = setTimeout(processNextPreload, 50);
+        schedulePreloadNext(PRELOAD_DELAY_SHORT);
         return;
     }
 
     const srcImg = new Image();
     srcImg.crossOrigin = "anonymous";
     srcImg.onload = async () => {
-        if (isPanning || isDragging || dom.body.classList.contains('animating') || upscaleTasks > 0) {
-            preloadQueueTimer = setTimeout(processNextPreload, 200);
+        if (shouldDeferPreloadWork()) {
+            schedulePreloadNext(PRELOAD_DELAY_DEFER);
             return;
         }
         if (!files[idx] || getFileUrl(idx) !== origUrl) {
-            preloadQueueTimer = setTimeout(processNextPreload, 50);
+            schedulePreloadNext(PRELOAD_DELAY_SHORT);
             return;
         }
         const nw = srcImg.naturalWidth;
         const nh = srcImg.naturalHeight;
         if (!nw || !nh) {
             console.error('processNextPreload: nw or nh is 0 for', origUrl);
-            preloadQueueTimer = setTimeout(processNextPreload, 50);
+            schedulePreloadNext(PRELOAD_DELAY_SHORT);
             return;
         }
 
@@ -3135,12 +3287,12 @@ async function processNextPreload() {
         const actualCacheKey = origUrl + '_' + actualMode + '_' + currentRatio;
 
         if (viewMode !== 'VIEWER' || Math.abs(idx - currentIndex) > 16) {
-            preloadQueueTimer = setTimeout(processNextPreload, 50);
+            schedulePreloadNext(PRELOAD_DELAY_SHORT);
             return;
         }
 
         if (upscaleCache.has(cacheKey)) {
-            preloadQueueTimer = setTimeout(processNextPreload, 50);
+            schedulePreloadNext(PRELOAD_DELAY_SHORT);
             return;
         }
 
@@ -3153,7 +3305,7 @@ async function processNextPreload() {
         if (actualMode !== 'ADPTV_SHOGA' && (upscaleW > 16384 || upscaleH > 16384)) {
             upscaleCache.set(actualCacheKey, origUrl);
             if (fallbackActive) upscaleCache.set(cacheKey, origUrl);
-            preloadQueueTimer = setTimeout(processNextPreload, 50);
+            schedulePreloadNext(PRELOAD_DELAY_SHORT);
             return;
         }
 
@@ -3226,7 +3378,7 @@ async function processNextPreload() {
                 if (!pass1Canvas) {
                     if (upscaleCache.get(actualCacheKey) === 'processing') upscaleCache.delete(actualCacheKey);
                     if (fallbackActive && upscaleCache.get(cacheKey) === 'processing') upscaleCache.delete(cacheKey);
-                    preloadQueueTimer = setTimeout(processNextPreload, 50);
+                    schedulePreloadNext(PRELOAD_DELAY_SHORT);
                     return;
                 }
                 finalCanvas = await runSinglePass(pass1Canvas, nw * 2.0, nh * 2.0, 2.0);
@@ -3237,7 +3389,7 @@ async function processNextPreload() {
             if (!finalCanvas) {
                 if (upscaleCache.get(actualCacheKey) === 'processing') upscaleCache.delete(actualCacheKey);
                 if (fallbackActive && upscaleCache.get(cacheKey) === 'processing') upscaleCache.delete(cacheKey);
-                preloadQueueTimer = setTimeout(processNextPreload, 50);
+                schedulePreloadNext(PRELOAD_DELAY_SHORT);
                 return;
             }
 
@@ -3250,7 +3402,7 @@ async function processNextPreload() {
                     console.error('Preload Canvas toBlob failed for:', actualCacheKey);
                     upscaleCache.set(actualCacheKey, 'error');
                     if (fallbackActive) upscaleCache.set(cacheKey, 'error');
-                    preloadQueueTimer = setTimeout(processNextPreload, 50);
+                    schedulePreloadNext(PRELOAD_DELAY_SHORT);
                     return;
                 }
                 const newUrl = URL.createObjectURL(blob);
@@ -3278,13 +3430,13 @@ async function processNextPreload() {
                 clearTimeout(upscaleDebounceTimer);
                 upscaleDebounceTimer = setTimeout(applyUpscaleOverlays, 100);
 
-                preloadQueueTimer = setTimeout(processNextPreload, 50);
+                schedulePreloadNext(PRELOAD_DELAY_SHORT);
             }, mime, 0.92);
         } catch (e) {
             console.error('Preload upscaling process failed:', e);
             upscaleCache.set(actualCacheKey, 'error');
             if (fallbackActive) upscaleCache.set(cacheKey, 'error');
-            preloadQueueTimer = setTimeout(processNextPreload, 50);
+            schedulePreloadNext(PRELOAD_DELAY_SHORT);
         }
     };
     srcImg.onerror = (err) => {
@@ -3292,7 +3444,7 @@ async function processNextPreload() {
         const cacheKey = origUrl + '_' + actualMode + '_' + originalTargetRatio;
         if (upscaleCache.get(cacheKey) === 'processing') upscaleCache.delete(cacheKey);
         upscaleCache.set(cacheKey, 'error');
-        preloadQueueTimer = setTimeout(processNextPreload, 50);
+        schedulePreloadNext(PRELOAD_DELAY_SHORT);
     };
     srcImg.src = origUrl;
 }
@@ -3513,7 +3665,7 @@ function applyUpscaleOverlays() {
 
         let isAnim = await checkAnimated(fileObj);
         overlayLogQueue.push(`[Index ${fIdx}] Type: ${fileObj.type}, isAnim: ${isAnim}`);
-        if (isAnim || fileObj.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(fileObj.name)) {
+        if (isAnim || isVideoFileLike(fileObj)) {
             overlayLogQueue.push(` -> Skipped (Anim/Video)`);
             return;
         }
@@ -3915,13 +4067,12 @@ function applyUpscaleOverlays() {
 function processFileList(fileList, title) {
     destroyAllHls();
     urlCache.forEach(url => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); });
-    urlCache.clear();
+    clearCachedUrls();
 
     upscaleCache.forEach(url => { if (url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
     upscaleCache.clear();
 
-    lightweightPreloadQueue = [];
-    activeLightweightIndex = -1;
+    resetLightweightPreloadState();
     isLightweightPreloading = false;
 
     files = fileList.sort(fileSortFn);
@@ -4143,12 +4294,11 @@ function switchToGrid() {
                 }
 
                 urlCache.forEach(url => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); });
-                urlCache.clear();
+                clearCachedUrls();
                 upscaleCache.forEach(url => { if (url !== 'error' && url !== 'skipped' && url !== 'processing' && url.startsWith('blob:')) URL.revokeObjectURL(url); });
                 upscaleCache.clear();
 
-                lightweightPreloadQueue = [];
-                activeLightweightIndex = -1;
+                resetLightweightPreloadState();
                 isLightweightPreloading = false;
 
                 isGridRendered = false;
@@ -4176,8 +4326,8 @@ function switchToGrid() {
         folderContainer.style.marginBottom = '20px';
 
         let displayFolders = [...currentFolders];
-        if (folderSortMode === 'name-asc') displayFolders.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-        else if (folderSortMode === 'name-desc') displayFolders.sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true }));
+        if (folderSortMode === 'name-asc') displayFolders.sort(compareByNameAsc);
+        else if (folderSortMode === 'name-desc') displayFolders.sort(compareByNameDesc);
 
         displayFolders.forEach(folder => {
             const folderItem = document.createElement('div');
@@ -4214,7 +4364,9 @@ function switchToGrid() {
         dom.gridArea.appendChild(folderContainer);
     }
 
-    files.forEach((file, index) => {
+    const fileFragment = document.createDocumentFragment();
+    for (let index = 0, len = files.length; index < len; index++) {
+        const file = files[index];
         const item = document.createElement('div');
         item.className = 'grid-item';
         item.dataset.index = index;
@@ -4223,12 +4375,13 @@ function switchToGrid() {
         canvas.fileData = file;
         const badge = document.createElement('div');
         badge.className = 'index-badge';
-        badge.textContent = index + 1;
+        badge.textContent = String((index + 1) | 0);
         item.appendChild(canvas);
         item.appendChild(badge);
-        dom.gridArea.appendChild(item);
+        fileFragment.appendChild(item);
         lazyThumbnailObserver.observe(canvas);
-    });
+    }
+    dom.gridArea.appendChild(fileFragment);
     isGridRendered = true;
 }
 
@@ -4244,7 +4397,7 @@ dom.gridArea.addEventListener('click', (e) => {
     const item = e.target.closest('.grid-item');
     if (item) {
         currentIndex = parseInt(item.dataset.index, 10);
-        lightweightPreloadQueue = [];
+        resetLightweightPreloadState();
         switchToViewer();
     }
 });
@@ -4523,7 +4676,7 @@ function updateInfoPanel() {
 
         let sizeDisplay = (f.size / (1024 * 1024)).toFixed(2) + ' MB';
         if (f.size === 0 && f.isJellyfin) {
-            sizeDisplay = (f.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(f.name)) ? 'Unknown (Server Stream)' : 'Unknown (Pending)';
+            sizeDisplay = isVideoFileLike(f) ? 'Unknown (Server Stream)' : 'Unknown (Pending)';
         }
 
         let w = f.nw || (mediaEl ? (mediaEl.naturalWidth || mediaEl.videoWidth) : 0);
@@ -4594,7 +4747,7 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
         indices.forEach((idx, i) => {
             const isUIBroken = currentItems[i].classList.contains('broken-file-ui');
             const isFileBroken = files[idx] && files[idx].isBroken;
-            const isVideo = files[idx] && (files[idx].type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(files[idx].name));
+            const isVideo = files[idx] && isVideoFileLike(files[idx]);
             const isUIVideo = currentItems[i].tagName && currentItems[i].tagName.toLowerCase() === 'video';
             if (isUIBroken !== !!isFileBroken || isVideo !== isUIVideo) needsRebuild = true;
         });
@@ -4641,7 +4794,7 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                 return;
             }
 
-            const isVideo = files[idx] && (files[idx].type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(files[idx].name));
+            const isVideo = files[idx] && isVideoFileLike(files[idx]);
             const mediaEl = document.createElement(isVideo ? 'video' : 'img');
             const url = getFileUrl(idx);
 
@@ -4654,6 +4807,7 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
             mediaEl.dataset.fileIndex = idx;
             mediaEl.dataset.originalUrl = url;
             mediaEl.classList.add('shoga-main-media');
+            normalizeMediaElementLayout(mediaEl);
 
             let placeholder = null;
             let placeholderSrc = null;
@@ -4912,7 +5066,7 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                                     } else {
                                         const oldUrl = this.dataset.originalUrl;
                                         if (oldUrl && oldUrl.startsWith('blob:')) URL.revokeObjectURL(oldUrl);
-                                        urlCache.delete(fIdx);
+                                        deleteCachedUrl(fIdx);
 
                                         for (let [k, v] of upscaleCache.entries()) {
                                             if (k.startsWith(oldUrl + '_')) {
@@ -4928,7 +5082,7 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                                             newUrl = getFileUrl(fIdx);
                                         } else {
                                             newUrl = URL.createObjectURL(files[fIdx]);
-                                            urlCache.set(fIdx, newUrl);
+                                            setCachedUrl(fIdx, newUrl);
                                         }
                                         this.dataset.originalUrl = newUrl;
                                         this.src = newUrl;
@@ -5041,13 +5195,14 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                 mediaEl.dataset.fileIndex = idx;
                 mediaEl.dataset.originalUrl = url;
                 mediaEl.classList.add('shoga-main-media');
+                normalizeMediaElementLayout(mediaEl);
 
                 if (mediaEl._placeholder && mediaEl._placeholder.parentNode) {
                     mediaEl._placeholder.parentNode.removeChild(mediaEl._placeholder);
                     delete mediaEl._placeholder;
                 }
 
-                const isVideo = files[idx] && (files[idx].type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(files[idx].name));
+                const isVideo = files[idx] && isVideoFileLike(files[idx]);
 
                 let placeholder = null;
                 let placeholderSrc = null;
@@ -5286,7 +5441,7 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                                         } else {
                                             const oldUrl = this.dataset.originalUrl;
                                             if (oldUrl && oldUrl.startsWith('blob:')) URL.revokeObjectURL(oldUrl);
-                                            urlCache.delete(fIdx);
+                                            deleteCachedUrl(fIdx);
 
                                             for (let [k, v] of upscaleCache.entries()) {
                                                 if (k.startsWith(oldUrl + '_')) {
@@ -5302,7 +5457,7 @@ function populateSlot(slot, targetIndex, token = null, onComplete = null) {
                                                 newUrl = getFileUrl(fIdx);
                                             } else {
                                                 newUrl = URL.createObjectURL(files[fIdx]);
-                                                urlCache.set(fIdx, newUrl);
+                                                setCachedUrl(fIdx, newUrl);
                                             }
                                             this.dataset.originalUrl = newUrl;
                                             this.src = newUrl;
@@ -5407,7 +5562,7 @@ async function updateUpscaleUIState() {
     const currentFile = files[currentIndex];
     if (!currentFile) return;
 
-    const isAnim = await checkAnimated(currentFile) || currentFile.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(currentFile.name);
+    const isAnim = await checkAnimated(currentFile) || isVideoFileLike(currentFile);
 
     const advancedUpscaleButtons = document.querySelectorAll('#upscale-adptv, #upscale-anime4k, #upscale-xbrz, #upscale-fsr');
     const bilinearBtn = document.getElementById('upscale-bilinear');
@@ -5437,6 +5592,18 @@ async function updateUpscaleUIState() {
         bilinearBtn.style.cursor = '';
         bilinearBtn.title = 'Bilinear';
     }
+}
+
+function normalizeMediaElementLayout(el) {
+    if (!el) return;
+    el.style.removeProperty('position');
+    el.style.removeProperty('left');
+    el.style.removeProperty('top');
+    el.style.removeProperty('right');
+    el.style.removeProperty('bottom');
+    el.style.removeProperty('margin');
+    el.style.removeProperty('width');
+    el.style.removeProperty('height');
 }
 
 function updateVideoPlayback() {
@@ -5484,7 +5651,7 @@ function renderViewer() {
             const file = files[idx];
             if (!file || file.isBroken) return;
 
-            const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(file.name);
+            const isVideo = isVideoFileLike(file);
             const isGif = file.type === 'image/gif' || /\.gif$/i.test(file.name);
 
             if (!isVideo && !isGif) return;
@@ -6637,7 +6804,7 @@ if ('launchQueue' in window) {
 
         const filePromises = launchParams.files.map(handle => handle.getFile());
         const openedFiles = await Promise.all(filePromises);
-        const validImages = openedFiles.filter(f => f.type.startsWith('image/') || f.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v|avi|jpg|jpeg|png|gif|webp|avif|bmp|ico)$/i.test(f.name));
+        const validImages = openedFiles.filter(f => isSupportedMediaFile(f));
 
         if (validImages.length > 0) {
             processFileList(validImages, validImages[0].name);
@@ -6683,14 +6850,30 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
 
 let resizeDebounce = null;
 window.addEventListener('resize', () => {
-    if (viewMode === 'VIEWER') {
-        clearTimeout(resizeDebounce);
+    if (viewMode !== 'VIEWER') return;
+    if (isLowEndHardware) {
+        if (resizeDebounce) return;
         resizeDebounce = setTimeout(() => {
-            vW = window.innerWidth;
-            vH = window.innerHeight;
-            resetTransform(false);
-        }, 150);
+            resizeDebounce = null;
+            const nextW = window.innerWidth | 0;
+            const nextH = window.innerHeight | 0;
+            if (nextW === vW && nextH === vH) return;
+            vW = nextW;
+            vH = nextH;
+            scheduleFrameTask(() => resetTransform(false));
+        }, 240);
+        return;
     }
+
+    clearTimeout(resizeDebounce);
+    resizeDebounce = setTimeout(() => {
+        const nextW = window.innerWidth | 0;
+        const nextH = window.innerHeight | 0;
+        if (nextW === vW && nextH === vH) return;
+        vW = nextW;
+        vH = nextH;
+        scheduleFrameTask(() => resetTransform(false));
+    }, 120);
 });
 
 /* SERVICEWORKER: PWA ONLY. DO NOT FORGET. */
