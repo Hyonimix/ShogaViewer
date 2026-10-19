@@ -2075,88 +2075,135 @@ dom.btnJfCancel.addEventListener('click', () => {
     pendingBookmarkRestoreId = null;
 });
 
+// Keep transport, reverse-proxy and account failures distinct.
+function shogaJellyfinHttpError(response, phase) {
+    const status = response.status;
+    let reason;
+    if (status === 401) reason = 'Jellyfin rejected the sign-in (HTTP 401). Check the account, password, and user access policy.';
+    else if (status === 403) reason = 'Jellyfin denied access (HTTP 403). Check remote access permissions for this user.';
+    else if (status === 404) reason = 'Jellyfin API not found (HTTP 404). Check the server base path, including /jellyfin if configured.';
+    else if (status === 429) reason = 'Jellyfin is temporarily limiting requests (HTTP 429).';
+    else if (status >= 500) reason = 'Jellyfin or its reverse proxy is temporarily unavailable (HTTP ' + status + ').';
+    else reason = 'Jellyfin ' + phase + ' request failed (HTTP ' + status + '). This does not necessarily mean the credentials are wrong.';
+    const error = new Error(reason);
+    error.retryable = status === 429 || status >= 500;
+    return error;
+}
+
+async function shogaJellyfinFetch(url, options = {}) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+        return await fetch(url, { ...options, credentials: 'omit', cache: 'no-store', signal: controller.signal });
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
 document.getElementById('jf-login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-
-    const url = dom.jfUrl.value.trim().replace(/\/$/, '');
+    const rawUrl = dom.jfUrl.value.trim().replace(/\/+$/, '');
     const user = dom.jfUser.value.trim();
     const pass = dom.jfPass.value;
-
     dom.btnJfConnect.disabled = true;
     dom.btnJfConnect.textContent = 'CONNECTING...';
     dom.jfError.style.display = 'none';
 
-    const loginToken = Date.now();
+    const loginToken = String(Date.now());
     dom.jellyfinModal.dataset.loginToken = loginToken;
-
-    let success = false;
     let lastError = null;
+    let phase = 'server check';
+    let verifiedServer = false;
 
-    for (let attempt = 1; attempt <= 5; attempt++) {
-        try {
-            if (typeof chrome !== 'undefined' && chrome.permissions) {
-                const granted = await new Promise(resolve => {
-                    chrome.permissions.request({ origins: [url + '/*'] }, resolve);
+    try {
+        const parsed = new URL(rawUrl);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+            throw new Error('Use an HTTP or HTTPS Jellyfin server address.');
+        }
+        const url = parsed.href.replace(/\/+$/, '');
+        // chrome.permissions applies to extensions, not an installed web PWA.
+        // Host permissions are origin-wide; do not request a /jellyfin path pattern.
+        if (typeof chrome !== 'undefined' && chrome.runtime?.id && chrome.permissions?.request) {
+            const granted = await new Promise((resolve, reject) => {
+                chrome.permissions.request({ origins: [parsed.origin + '/*'] }, (ok) => {
+                    const apiError = chrome.runtime.lastError;
+                    if (apiError) reject(new Error('Chrome site permission failed: ' + apiError.message));
+                    else resolve(ok);
                 });
-                if (!granted) throw new Error('Permission denied by user.');
-            }
-
-            const authPayload = { Username: user, Pw: pass };
-            const authHeaders = {
-                'Content-Type': 'application/json',
-                'X-Emby-Authorization': 'MediaBrowser Client="Shoga Viewer", Device="Chrome", DeviceId="shoga-ext", Version="1.0.0"'
-            };
-
-            const res = await fetch(`${url}/Users/AuthenticateByName`, {
-                method: 'POST',
-                headers: authHeaders,
-                body: JSON.stringify(authPayload)
             });
+            if (!granted) throw new Error('Chrome site permission was denied for the Jellyfin host.');
+        }
 
-            if (!res.ok) throw new Error(`Auth failed (${res.status}). Check credentials.`);
+        // A password-free discovery probe separates a dead endpoint from a
+        // credential rejection and makes browser CORS errors easier to locate.
+        const infoResponse = await shogaJellyfinFetch(url + '/System/Info/Public');
+        if (!infoResponse.ok) throw shogaJellyfinHttpError(infoResponse, 'server discovery');
+        const info = await infoResponse.json().catch(() => null);
+        if (!info || (!info.Id && !info.Version)) {
+            throw new Error('The address responds, but it is not a Jellyfin API endpoint.');
+        }
+        verifiedServer = true;
+        phase = 'sign-in';
 
-            const data = await res.json();
-            jellyfinConfig = {
-                serverUrl: url,
-                accessToken: data.AccessToken,
-                userId: data.User.Id
-            };
-
-            localStorage.setItem('shoga-jf-url', url);
-
-            success = true;
-            break;
-        } catch (err) {
-            lastError = err;
-            if (attempt < 5) {
-                dom.jfError.textContent = `Connection failed. Retrying in 2s... (${attempt}/5)`;
-                dom.jfError.style.display = 'block';
-                await new Promise(resolve => setTimeout(resolve, 2000));
-
-                if (dom.jellyfinModal.dataset.loginToken != loginToken || !dom.jellyfinModal.classList.contains('active')) {
-                    return;
+        const authHeaders = {
+            'Content-Type': 'application/json',
+            'X-Emby-Authorization': 'MediaBrowser Client="Shoga Viewer", Device="Chrome", DeviceId="shoga-ext", Version="1.0.0"'
+        };
+        for (let attempt = 0; attempt < 2; attempt++) {
+            if (dom.jellyfinModal.dataset.loginToken !== loginToken || !dom.jellyfinModal.classList.contains('active')) return;
+            try {
+                const response = await shogaJellyfinFetch(url + '/Users/AuthenticateByName', {
+                    method: 'POST',
+                    headers: authHeaders,
+                    body: JSON.stringify({ Username: user, Pw: pass })
+                });
+                if (!response.ok) throw shogaJellyfinHttpError(response, 'sign-in');
+                const data = await response.json().catch(() => null);
+                if (!data?.AccessToken || !data?.User?.Id) {
+                    throw new Error('Jellyfin returned an incomplete sign-in response.');
                 }
+                jellyfinConfig = {
+                    serverUrl: url,
+                    accessToken: data.AccessToken,
+                    userId: data.User.Id
+                };
+                localStorage.setItem('shoga-jf-url', url);
+                dom.jellyfinModal.classList.remove('active');
+                if (pendingBookmarkRestoreId) {
+                    const idToRestore = pendingBookmarkRestoreId;
+                    pendingBookmarkRestoreId = null;
+                    restoreBookmark(idToRestore);
+                } else {
+                    loadJellyfinFolder();
+                }
+                return;
+            } catch (err) {
+                lastError = err;
+                if (!err.retryable || attempt === 1) throw err;
+                dom.jfError.textContent = 'Temporary server error; retrying once...';
+                dom.jfError.style.display = 'block';
+                await new Promise(resolve => setTimeout(resolve, 800));
             }
         }
-    }
-
-    if (success) {
-        dom.jellyfinModal.classList.remove('active');
-        if (pendingBookmarkRestoreId) {
-            const idToRestore = pendingBookmarkRestoreId;
-            pendingBookmarkRestoreId = null;
-            restoreBookmark(idToRestore);
-        } else {
-            loadJellyfinFolder();
+    } catch (err) {
+        lastError = err;
+        if (dom.jellyfinModal.dataset.loginToken !== loginToken) return;
+        let message = lastError?.message || String(lastError);
+        if (lastError?.name === 'AbortError') {
+            message = 'Jellyfin request timed out during ' + phase + ' (15s). Check network or Funnel availability.';
+        } else if (lastError instanceof TypeError) {
+            message = verifiedServer
+                ? 'Jellyfin is reachable, but the sign-in request was blocked or lost. Check browser CORS preflight for Content-Type and X-Emby-Authorization, or network connectivity.'
+                : 'Jellyfin API could not be reached from this browser. Check network, HTTPS, and CORS for this app origin.';
         }
-        dom.btnJfConnect.disabled = false;
-        dom.btnJfConnect.textContent = 'CONNECT';
-    } else {
-        console.error('[Jellyfin Connection Error]', lastError);
-        dom.jfError.textContent = lastError.name === 'TypeError' ? 'Network error. Check Server URL or Mixed Content (HTTP/HTTPS) block.' : lastError.message;
+        console.error('[Shoga Jellyfin]', phase, lastError?.name || 'Error', message);
+        dom.jfError.textContent = message;
         dom.jfError.style.display = 'block';
-        dom.btnJfConnect.disabled = false;
-        dom.btnJfConnect.textContent = 'CONNECT';
+    } finally {
+        if (dom.jellyfinModal.dataset.loginToken === loginToken) {
+            dom.btnJfConnect.disabled = false;
+            dom.btnJfConnect.textContent = 'CONNECT';
+        }
     }
 });
 
